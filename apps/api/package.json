@@ -1,0 +1,20 @@
+{
+  "name": "@erp/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@erp/domain": "file:../../packages/domain",
+    "@erp/identity": "file:../../modules/identity",
+    "@erp/organization": "file:../../modules/organization",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "tsx": "^4.0.0"
+  }
+}

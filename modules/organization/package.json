@@ -1,0 +1,17 @@
+{
+  "name": "@erp/organization",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@erp/domain": "file:../../packages/domain",
+    "@erp/identity": "file:../identity",
+    "mongodb": "^7.1.0"
+  }
+}

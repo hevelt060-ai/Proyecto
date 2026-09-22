@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:8.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --replSet rs0
+          --bind_ip_all
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Initialize MongoDB replica set
+        run: |
+          container_id=$(docker ps --filter "ancestor=mongo:8.0" --format "{{.ID}}" | head -n 1)
+          docker exec "$container_id" mongosh --quiet --eval 'try { rs.status() } catch (error) { rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] }) }'
+      - name: Run validation
+        run: npm run validate
+      - name: Run security tests
+        run: npm run test:security
+      - name: Run MongoDB integration tests
+        env:
+          MONGODB_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0
+          MONGODB_DATABASE: erp_ci_${{ github.run_id }}
+        run: npm run test:integration
+      - name: Build
+        run: npm run build

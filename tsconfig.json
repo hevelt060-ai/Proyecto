@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./apps/api" },
+    { "path": "./apps/worker" },
+    { "path": "./packages/config" },
+    { "path": "./packages/domain" },
+    { "path": "./packages/types" },
+    { "path": "./packages/database" },
+    { "path": "./modules/identity" },
+    { "path": "./modules/organization" }
+  ]
+}

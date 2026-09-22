@@ -1,0 +1,12 @@
+{
+  "name": "@erp/worker",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0"
+  }
+}

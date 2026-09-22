@@ -1,0 +1,46 @@
+{
+  "name": "erp-platform",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@11.6.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "modules/*"
+  ],
+  "scripts": {
+    "build": "npm run typecheck",
+    "dev": "npm run dev --workspace=@erp/api",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:security": "vitest run tests/security",
+    "test:integration": "vitest run tests/integration",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b",
+    "validate": "npm run format:check && npm run lint && npm run typecheck && npm test"
+  },
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^24.0.0",
+    "@types/supertest": "^7.2.1",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "supertest": "^7.3.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "mongodb": "^7.6.0",
+    "zod": "^4.6.5"
+  }
+}

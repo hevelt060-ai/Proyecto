@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "references": [
+    { "path": "../../packages/config" },
+    { "path": "../../packages/database" },
+    { "path": "../../packages/domain" },
+    { "path": "../../modules/identity" },
+    { "path": "../../modules/organization" }
+  ],
+  "include": ["src/**/*.ts"]
+}
