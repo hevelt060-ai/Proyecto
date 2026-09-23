@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { loadConfig } from "../../packages/config/src/index.js";
 import { MongoDatabaseConnection } from "../../packages/database/src/index.js";
 import {
   InMemoryAuditLogger,
@@ -15,11 +16,9 @@ import {
   OrganizationService,
 } from "../../modules/organization/src/index.js";
 
-const databaseName = `erp_phase_1_1_${process.pid}_${randomUUID().replaceAll("-", "")}`;
-const connection = new MongoDatabaseConnection(
-  process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017/?directConnection=true",
-  databaseName,
-);
+const databaseName = `erp_${randomUUID().slice(0, 8)}`;
+const config = loadConfig("test");
+const connection = new MongoDatabaseConnection(config.mongoUri, databaseName);
 let identity: IdentityService;
 let organizationStore: MongoOrganizationStore;
 let organization: OrganizationService;
@@ -48,13 +47,13 @@ beforeAll(async () => {
     tenantName: "Mongo Tenant B",
     tenantSlug: `mongo-b-${process.pid}`,
   });
-});
+}, 30000);
 
 afterAll(async () => {
   const database = await connection.connect();
   await database.dropDatabase();
   await connection.disconnect();
-});
+}, 30000);
 
 describe("MongoDB identity and organization integration", () => {
   it("persists users, credentials, sessions, tenants and memberships", async () => {

@@ -1,4 +1,11 @@
+import { existsSync } from "node:fs";
+import { loadEnvFile } from "node:process";
+
 import { z } from "zod";
+
+if (existsSync(".env")) {
+  loadEnvFile(".env");
+}
 
 const environmentSchema = z.enum(["development", "test", "staging", "production"]);
 
@@ -10,9 +17,8 @@ const configSchema = z.object({
     .regex(/^\/api\/v[0-9]+$/)
     .default("/api/v1"),
   USE_MONGODB: z.enum(["true", "false"]).default("false"),
-  MONGODB_URI: z.string().min(1).default("mongodb://127.0.0.1:27017"),
-  MONGODB_DATABASE: z.string().min(1).default("erp"),
-  MONGODB_DB_NAME: z.string().min(1).optional(),
+  MONGODB_URI: z.string().min(1).optional(),
+  MONGODB_DATABASE: z.string().min(1).optional(),
   SESSION_SECRET: z.string().min(32).optional(),
   PASSWORD_PEPPER: z.string().min(16).optional(),
   REDIS_URL: z.string().url().optional(),
@@ -26,7 +32,7 @@ export interface AppConfig {
   apiPrefix: string;
   mongoUri: string;
   mongoDatabase: string;
-  sessionSecret: string;
+  sessionSecret?: string;
   passwordPepper?: string;
   rateLimitWindowMs: number;
   rateLimitMax: number;
@@ -35,11 +41,11 @@ export interface AppConfig {
 
 export const loadConfig = (environment = process.env.NODE_ENV ?? "development"): AppConfig => {
   const parsed = configSchema.parse({ ...process.env, NODE_ENV: environment });
-  const sessionSecret =
-    parsed.SESSION_SECRET ??
-    (parsed.NODE_ENV === "production" ? undefined : "development-session-secret-change-me");
+  if (parsed.USE_MONGODB === "true" && (!parsed.MONGODB_URI || !parsed.MONGODB_DATABASE)) {
+    throw new Error("MONGODB_URI and MONGODB_DATABASE are required when USE_MONGODB=true");
+  }
 
-  if (!sessionSecret) {
+  if (parsed.NODE_ENV === "production" && !parsed.SESSION_SECRET) {
     throw new Error("SESSION_SECRET must be configured in production");
   }
 
@@ -48,9 +54,9 @@ export const loadConfig = (environment = process.env.NODE_ENV ?? "development"):
     port: parsed.PORT,
     apiPrefix: parsed.API_PREFIX,
     useMongoDb: parsed.USE_MONGODB === "true",
-    mongoUri: parsed.MONGODB_URI,
-    mongoDatabase: parsed.MONGODB_DB_NAME ?? parsed.MONGODB_DATABASE,
-    sessionSecret,
+    mongoUri: parsed.MONGODB_URI ?? "",
+    mongoDatabase: parsed.MONGODB_DATABASE ?? "",
+    ...(parsed.SESSION_SECRET ? { sessionSecret: parsed.SESSION_SECRET } : {}),
     ...(parsed.PASSWORD_PEPPER ? { passwordPepper: parsed.PASSWORD_PEPPER } : {}),
     rateLimitWindowMs: parsed.RATE_LIMIT_WINDOW_MS,
     rateLimitMax: parsed.RATE_LIMIT_MAX,
