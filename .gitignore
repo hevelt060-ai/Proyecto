@@ -9,3 +9,8 @@ coverage/
 .DS_Store
 .mongodb-data/
 *.log
+
+.idea/
+*.iml
+.gradle/
+local.properties
