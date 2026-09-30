@@ -64,3 +64,5 @@ export class ConflictError extends DomainError {
     this.name = "ConflictError";
   }
 }
+
+export * from "./workshop.js";

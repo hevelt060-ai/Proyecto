@@ -1,36 +1,50 @@
-import { Db, MongoClient } from "mongodb";
+import { MongoClient, type ClientSession, type Db, type TransactionOptions } from "mongodb";
 
-export interface DatabaseConnection {
-  connect(): Promise<Db>;
-  disconnect(): Promise<void>;
+let client: MongoClient | null = null;
+let db: Db | null = null;
+
+export async function connectDatabase(uri: string, dbName: string): Promise<Db> {
+  if (db) return db;
+  client = new MongoClient(uri);
+  await client.connect();
+  db = client.db(dbName);
+  return db;
 }
 
-export class MongoDatabaseConnection implements DatabaseConnection {
-  private readonly client: MongoClient;
-  private database: Db | undefined;
+export function getDatabase(): Db {
+  if (!db) {
+    throw new Error("Database not initialized. Call connectDatabase first.");
+  }
+  return db;
+}
 
-  public constructor(
-    private readonly uri: string,
-    private readonly databaseName: string,
-  ) {
-    this.client = new MongoClient(uri);
+export async function withTransaction<T>(
+  callback: (session: ClientSession, db: Db) => Promise<T>,
+  options?: TransactionOptions,
+): Promise<T> {
+  if (!client || !db) {
+    throw new Error("Database client not initialized.");
   }
 
-  public async connect(): Promise<Db> {
-    if (!this.database) {
-      await this.client.connect();
-      this.database = this.client.db(this.databaseName);
-      await ensureIndexes(this.database);
-    }
-
-    return this.database;
-  }
-
-  public async disconnect(): Promise<void> {
-    await this.client.close();
-    this.database = undefined;
+  const session = client.startSession();
+  try {
+    let result: T;
+    await session.withTransaction(async () => {
+      result = await callback(session, db!);
+    }, options);
+    return result!;
+  } finally {
+    await session.endSession();
   }
 }
+
+export async function disconnectDatabase(): Promise<void> {
+  await client?.close();
+  client = null;
+  db = null;
+}
+
+export { WorkshopDomainService } from "./workshopService.js";
 
 export const ensureIndexes = async (database: Db): Promise<void> => {
   await Promise.all([

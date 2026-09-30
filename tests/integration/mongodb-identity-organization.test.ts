@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { loadConfig } from "../../packages/config/src/index.js";
-import { MongoDatabaseConnection } from "../../packages/database/src/index.js";
+import {
+  connectDatabase,
+  disconnectDatabase,
+  ensureIndexes,
+  getDatabase,
+} from "../../packages/database/src/index.js";
 import {
   InMemoryAuditLogger,
   IdentityService,
@@ -18,7 +23,6 @@ import {
 
 const databaseName = `erp_${randomUUID().slice(0, 8)}`;
 const config = loadConfig("test");
-const connection = new MongoDatabaseConnection(config.mongoUri, databaseName);
 let identity: IdentityService;
 let organizationStore: MongoOrganizationStore;
 let organization: OrganizationService;
@@ -27,7 +31,8 @@ let userA: Awaited<ReturnType<IdentityService["register"]>>;
 let userB: Awaited<ReturnType<IdentityService["register"]>>;
 
 beforeAll(async () => {
-  const database = await connection.connect();
+  const database = await connectDatabase(config.mongoUri, databaseName);
+  await ensureIndexes(database);
   const identityStore = new MongoIdentityStore(database);
   organizationStore = new MongoOrganizationStore(database);
   identity = new IdentityService(identityStore);
@@ -50,9 +55,9 @@ beforeAll(async () => {
 }, 30000);
 
 afterAll(async () => {
-  const database = await connection.connect();
+  const database = getDatabase();
   await database.dropDatabase();
-  await connection.disconnect();
+  await disconnectDatabase();
 }, 30000);
 
 describe("MongoDB identity and organization integration", () => {
@@ -166,7 +171,7 @@ describe("MongoDB identity and organization integration", () => {
       requestId: "mongo-request",
       metadata: { test: true },
     });
-    const database = await connection.connect();
+    const database = getDatabase();
     const log = await database.collection("auditLogs").findOne({ requestId: "mongo-request" });
     expect(log?.tenantId).toBe(userA.tenant.id);
     expect(log?.metadata).toEqual({ test: true });
@@ -179,7 +184,7 @@ describe("MongoDB identity and organization integration", () => {
     );
     await identity.logout(userA.token);
     await expect(identity.authenticate(userA.token)).rejects.toThrow("Authentication required");
-    const database = await connection.connect();
+    const database = getDatabase();
     const credential = await database.collection("credentials").findOne({ _id: userA.user.id });
     const session = await database.collection("sessions").findOne({ userId: userA.user.id });
     expect(credential?.passwordHash).toBeDefined();
@@ -224,7 +229,7 @@ describe("MongoDB identity and organization integration", () => {
       ),
       identity.updateMembership(userA.context, membership.id, ["manager"], ["branch"], "active"),
     ]);
-    const database = await connection.connect();
+    const database = getDatabase();
     const stored = await database.collection("memberships").findOne({ _id: membership.id });
     expect([
       ["employee", "organization"],
@@ -233,7 +238,7 @@ describe("MongoDB identity and organization integration", () => {
   });
 
   it("creates and verifies the documented indexes", async () => {
-    const database = await connection.connect();
+    const database = getDatabase();
     const indexNames = new Set(
       (await database.collection("sessions").listIndexes().toArray()).map((index) => index.name),
     );

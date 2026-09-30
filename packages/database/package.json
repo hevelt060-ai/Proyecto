@@ -10,6 +10,7 @@
     }
   },
   "dependencies": {
+    "@erp/domain": "file:../domain",
     "mongodb": "^7.1.0"
   }
 }

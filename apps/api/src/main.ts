@@ -4,7 +4,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { z, ZodError } from "zod";
 
 import { loadConfig, type AppConfig } from "@erp/config";
-import { MongoDatabaseConnection } from "@erp/database";
+import { connectDatabase, ensureIndexes } from "@erp/database";
 import {
   AuthenticationError,
   AuthorizationError,
@@ -590,10 +590,8 @@ export const start = async (): Promise<void> => {
   const config = loadConfig();
   let app: ReturnType<typeof createApp>;
   if (config.useMongoDb) {
-    const database = await new MongoDatabaseConnection(
-      config.mongoUri,
-      config.mongoDatabase,
-    ).connect();
+    const database = await connectDatabase(config.mongoUri, config.mongoDatabase);
+    await ensureIndexes(database);
     const { MongoIdentityStore } = await import("@erp/identity");
     const { MongoOrganizationStore } = await import("@erp/organization");
     app = createApp({
