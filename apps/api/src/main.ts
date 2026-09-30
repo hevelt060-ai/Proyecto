@@ -4,12 +4,15 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { z, ZodError } from "zod";
 
 import { loadConfig, type AppConfig } from "@erp/config";
-import { connectDatabase, ensureIndexes } from "@erp/database";
+import { WorkshopDomainService, connectDatabase, ensureIndexes, getDatabase } from "@erp/database";
 import {
   AuthenticationError,
   AuthorizationError,
   DomainError,
   TenantAccessDeniedError,
+  type Equipment,
+  type WorkOrder,
+  type WorkOrderStatus,
 } from "@erp/domain";
 import {
   InMemoryAuditLogger,
@@ -90,6 +93,42 @@ const membershipSchema = z.object({
 const membershipUpdateSchema = membershipSchema
   .omit({ userId: true })
   .extend({ status: z.enum(["active", "disabled"]) });
+
+const createWorkOrderSchema = z.object({
+  equipment: z.object({
+    serialNumber: z.string().min(3),
+    brand: z.string().min(2),
+    model: z.string().min(2),
+    category: z.enum(["MTB", "ROAD", "GRAVEL", "E_BIKE", "SUSPENSION"]),
+    customerId: z.string().min(1),
+  }),
+  intakeChecklist: z.object({
+    damagesReported: z.array(z.string()).default([]),
+    odometerKm: z.number().optional(),
+    suspensionLockWorking: z.boolean().default(true),
+    initialCleanliness: z.enum(["CLEAN", "DIRTY", "MUDDY"]).default("DIRTY"),
+  }),
+  laborCost: z.number().nonnegative().default(0),
+});
+
+const addPartSchema = z.object({
+  sku: z.string().min(1),
+  quantity: z.number().int().positive(),
+});
+
+const transitionStatusSchema = z.object({
+  status: z.enum([
+    "RECEIVED",
+    "IN_DIAGNOSIS",
+    "WAITING_PARTS",
+    "IN_PROGRESS",
+    "QUALITY_CHECK",
+    "READY_FOR_DELIVERY",
+    "DELIVERED",
+    "CANCELLED",
+  ]),
+  notes: z.string().max(500).optional(),
+});
 const tokenFrom = (request: Request): string => {
   const value = request.header("authorization");
   return value?.startsWith("Bearer ") ? value.slice(7) : "";
@@ -554,6 +593,180 @@ export const createApp = (dependencies: ApiDependencies = {}) => {
         response
           .status(201)
           .json({ success: true, data: value, requestId: (request as RequestContext).requestId });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  const requireWorkOrderId = (request: Request): string => {
+    const orderId = request.params.orderId;
+    if (typeof orderId !== "string" || orderId.length === 0)
+      throw new DomainError("VALIDATION_ERROR", "Invalid work order id");
+    return orderId;
+  };
+
+  app.get(
+    `${config.apiPrefix}/workshop/work-orders`,
+    authenticated,
+    async (request, response, next) => {
+      try {
+        const context = requirePermission(request);
+        identity.authorize(context, "organization.read", context.tenantId);
+        const orders = await getDatabase()
+          .collection<WorkOrder>("work_orders")
+          .find({})
+          .sort({ createdAt: -1 })
+          .toArray();
+        response.json({
+          success: true,
+          data: orders,
+          requestId: (request as RequestContext).requestId,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+  app.get(
+    `${config.apiPrefix}/workshop/work-orders/:orderId`,
+    authenticated,
+    async (request, response, next) => {
+      try {
+        const context = requirePermission(request);
+        identity.authorize(context, "organization.read", context.tenantId);
+        const order = await getDatabase()
+          .collection<WorkOrder>("work_orders")
+          .findOne({ id: requireWorkOrderId(request) });
+        if (!order) throw new DomainError("NOT_FOUND", "Work order not found");
+        response.json({
+          success: true,
+          data: order,
+          requestId: (request as RequestContext).requestId,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+  app.post(
+    `${config.apiPrefix}/workshop/work-orders`,
+    authenticated,
+    async (request, response, next) => {
+      try {
+        const context = requirePermission(request);
+        identity.authorize(context, "organization.read", context.tenantId);
+        const input = createWorkOrderSchema.parse(request.body);
+        const db = getDatabase();
+        const now = new Date();
+        const equipmentId = randomUUID();
+        const orderId = randomUUID();
+        const year = now.getFullYear();
+        const sequence = (await db.collection("work_orders").countDocuments()) + 1;
+        const folio = `OT-${year}-${String(sequence).padStart(5, "0")}`;
+        const equipment: Equipment = {
+          id: equipmentId,
+          serialNumber: input.equipment.serialNumber,
+          brand: input.equipment.brand,
+          model: input.equipment.model,
+          category: input.equipment.category,
+          customerId: input.equipment.customerId,
+          createdAt: now,
+        };
+        const { odometerKm, ...intakeChecklist } = input.intakeChecklist;
+        const order: WorkOrder = {
+          id: orderId,
+          folio,
+          equipmentId,
+          customerId: input.equipment.customerId,
+          status: "RECEIVED",
+          intakeChecklist: {
+            ...intakeChecklist,
+            ...(odometerKm === undefined ? {} : { odometerKm }),
+          },
+          parts: [],
+          laborCost: input.laborCost,
+          totalCost: input.laborCost,
+          statusHistory: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+        await db.collection<Equipment>("equipment").insertOne(equipment);
+        await db.collection<WorkOrder>("work_orders").insertOne(order);
+        await auditRequest(
+          request as RequestContext,
+          "workshop.work_order.created",
+          "work_order",
+          orderId,
+        );
+        response.status(201).json({
+          success: true,
+          data: { equipment, workOrder: order },
+          requestId: (request as RequestContext).requestId,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+  app.post(
+    `${config.apiPrefix}/workshop/work-orders/:orderId/parts`,
+    authenticated,
+    async (request, response, next) => {
+      try {
+        const context = requirePermission(request);
+        identity.authorize(context, "organization.read", context.tenantId);
+        const orderId = requireWorkOrderId(request);
+        const input = addPartSchema.parse(request.body);
+        await WorkshopDomainService.reservePartForOrder(orderId, input.sku, input.quantity);
+        const order = await getDatabase()
+          .collection<WorkOrder>("work_orders")
+          .findOne({ id: orderId });
+        await auditRequest(
+          request as RequestContext,
+          "workshop.part.reserved",
+          "work_order",
+          orderId,
+        );
+        response.json({
+          success: true,
+          data: order,
+          requestId: (request as RequestContext).requestId,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+  app.patch(
+    `${config.apiPrefix}/workshop/work-orders/:orderId/status`,
+    authenticated,
+    async (request, response, next) => {
+      try {
+        const context = requirePermission(request);
+        identity.authorize(context, "organization.read", context.tenantId);
+        const orderId = requireWorkOrderId(request);
+        const input = transitionStatusSchema.parse(request.body);
+        await WorkshopDomainService.transitionWorkOrderStatus(
+          orderId,
+          input.status as WorkOrderStatus,
+          context.userId,
+          input.notes,
+        );
+        const order = await getDatabase()
+          .collection<WorkOrder>("work_orders")
+          .findOne({ id: orderId });
+        await auditRequest(
+          request as RequestContext,
+          "workshop.work_order.status.changed",
+          "work_order",
+          orderId,
+        );
+        response.json({
+          success: true,
+          data: order,
+          requestId: (request as RequestContext).requestId,
+        });
       } catch (error) {
         next(error);
       }
