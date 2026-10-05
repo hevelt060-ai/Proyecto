@@ -324,7 +324,7 @@ export const createApp = (dependencies: ApiDependencies = {}) => {
     }
   });
 
-  app.post(`${config.apiPrefix}/auth/login`, async (request, response, next) => {
+  app.post([`${config.apiPrefix}/auth/login`, "/auth/login"], async (request, response, next) => {
     try {
       if (
         !rateLimiter.check(`login:${request.ip}:${String(request.body?.email ?? "").toLowerCase()}`)
@@ -789,14 +789,18 @@ export const createApp = (dependencies: ApiDependencies = {}) => {
   };
 
   // Endpoints homologados con apps/web
-  app.get(`${config.apiPrefix}/work-orders`, authenticated, getWorkOrdersHandler);
+  app.get([`${config.apiPrefix}/work-orders`, "/work-orders"], authenticated, getWorkOrdersHandler);
   app.get(`${config.apiPrefix}/workshop/work-orders`, authenticated, getWorkOrdersHandler);
 
-  app.post(`${config.apiPrefix}/work-orders`, authenticated, createWorkOrderHandler);
+  app.post(
+    [`${config.apiPrefix}/work-orders`, "/work-orders"],
+    authenticated,
+    createWorkOrderHandler,
+  );
   app.post(`${config.apiPrefix}/workshop/work-orders`, authenticated, createWorkOrderHandler);
 
   app.patch(
-    `${config.apiPrefix}/work-orders/:orderId/status`,
+    [`${config.apiPrefix}/work-orders/:orderId/status`, "/work-orders/:orderId/status"],
     authenticated,
     transitionStatusHandler,
   );

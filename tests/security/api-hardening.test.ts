@@ -34,6 +34,31 @@ describe("API hardening", () => {
     expect(invalid.body).not.toHaveProperty("stack");
   });
 
+  it("supports legacy route aliases and CORS preflight", async () => {
+    const app = createApp({ config: loadConfig("test") });
+    const preflight = await request(app).options("/auth/login");
+    const loginResponses = await Promise.all([
+      request(app).post("/api/v1/auth/login").send({ email: "user@example.com", password: "bad" }),
+      request(app).post("/auth/login").send({ email: "user@example.com", password: "bad" }),
+    ]);
+    const workOrderResponses = await Promise.all([
+      request(app).get("/api/v1/work-orders"),
+      request(app).get("/work-orders"),
+      request(app).post("/api/v1/work-orders").send({}),
+      request(app).post("/work-orders").send({}),
+      request(app).patch("/api/v1/work-orders/order-id/status").send({}),
+      request(app).patch("/work-orders/order-id/status").send({}),
+    ]);
+
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers["access-control-allow-origin"]).toBe("*");
+    expect(preflight.headers["access-control-allow-methods"]).toContain("OPTIONS");
+    expect(loginResponses.map((response) => response.status)).toEqual([401, 401]);
+    expect(workOrderResponses.map((response) => response.status)).toEqual([
+      401, 401, 401, 401, 401, 401,
+    ]);
+  });
+
   it("limits login attempts without requiring Redis", async () => {
     const config = { ...loadConfig("test"), rateLimitMax: 2, rateLimitWindowMs: 60_000 };
     const app = createApp({ config, rateLimiter: new InMemoryRateLimiter(2, 60_000) });
