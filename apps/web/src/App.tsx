@@ -1,5 +1,5 @@
-import { useEffect, useState, FormEvent } from "react";
-import { api, WorkOrder, WorkOrderStatus, InventoryItem } from "./services/api";
+import { useEffect, useState, type FormEvent } from "react";
+import { api, type WorkOrder, type WorkOrderStatus, type InventoryItem } from "./services/api";
 
 const STATUS_COLUMNS: WorkOrderStatus[] = [
   "RECEIVED",
