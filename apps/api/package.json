@@ -8,6 +8,8 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@erp/config": "file:../../packages/config",
+    "@erp/database": "file:../../packages/database",
     "@erp/domain": "file:../../packages/domain",
     "@erp/identity": "file:../../modules/identity",
     "@erp/organization": "file:../../modules/organization",

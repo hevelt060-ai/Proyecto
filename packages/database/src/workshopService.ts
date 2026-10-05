@@ -2,6 +2,9 @@ import { type ClientSession, type Db } from "mongodb";
 
 import {
   ALLOWED_STATUS_TRANSITIONS,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
   type InventoryItem,
   type WorkOrder,
   type WorkOrderStatus,
@@ -15,7 +18,7 @@ export class WorkshopDomainService {
    * Evita condición de carrera descontando stock disponible e incrementando reservado.
    */
   static async reservePartForOrder(orderId: string, sku: string, quantity: number): Promise<void> {
-    if (quantity <= 0) throw new Error("Quantity must be greater than 0");
+    if (quantity <= 0) throw new ValidationError("Quantity must be greater than 0");
 
     await withTransaction(async (session: ClientSession, db: Db) => {
       const inventoryCol = db.collection<InventoryItem>("inventory");
@@ -36,7 +39,7 @@ export class WorkshopDomainService {
       );
 
       if (!invUpdate) {
-        throw new Error(`Insufficient available stock for SKU: ${sku}`);
+        throw new ConflictError(`Insufficient available stock for SKU: ${sku}`);
       }
 
       const updateResult = await ordersCol.updateOne(
@@ -58,7 +61,7 @@ export class WorkshopDomainService {
       );
 
       if (updateResult.matchedCount === 0) {
-        throw new Error(`Work order ${orderId} is not in a valid state to add parts`);
+        throw new ConflictError(`Work order ${orderId} is not in a valid state to add parts`);
       }
     });
   }
@@ -78,11 +81,11 @@ export class WorkshopDomainService {
       const inventoryCol = db.collection<InventoryItem>("inventory");
 
       const order = await ordersCol.findOne({ id: orderId }, { session });
-      if (!order) throw new Error(`Work order ${orderId} not found`);
+      if (!order) throw new NotFoundError("Work order");
 
       const allowedNext = ALLOWED_STATUS_TRANSITIONS[order.status];
       if (!allowedNext.includes(nextStatus)) {
-        throw new Error(
+        throw new ConflictError(
           `Invalid state transition: Cannot move from ${order.status} to ${nextStatus}`,
         );
       }
