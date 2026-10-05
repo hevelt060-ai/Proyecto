@@ -1,5 +1,13 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || "https://erp-api-backend.onrender.com/api/v1";
 
+const rawBaseUrl =
+  (import.meta.env.VITE_API_URL as string | undefined) ||
+  "https://erp-api-backend.onrender.com/api/v1";
+
+const trimmedUrl = rawBaseUrl.replace(/\/+$/, "");
+
+const API_BASE_URL = trimmedUrl.endsWith("/api/v1") ? trimmedUrl : `${trimmedUrl}/api/v1`;
+
 export type WorkOrderStatus =
   | "RECEIVED"
   | "IN_DIAGNOSIS"
