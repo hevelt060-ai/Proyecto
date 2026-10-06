@@ -1,0 +1,291 @@
+import { useState } from "react";
+
+import type { WorkOrder, WorkOrderStatus } from "../../services/api";
+import type { BikeService, BikeServiceStatus, NewBikeServiceData } from "./types";
+import { toLocalDateKey } from "./types";
+import { DashboardHeader } from "./DashboardHeader";
+import { NewServiceModal } from "./NewServiceModal";
+import { PendingServicesCard } from "./PendingServicesCard";
+import { ServiceDetailModal } from "./ServiceDetailModal";
+import { WorkshopCalendar } from "./WorkshopCalendar";
+
+interface DashboardPageProps {
+  userName: string;
+  orders: WorkOrder[];
+  loading: boolean;
+  error: string;
+  onLogout: () => void;
+  onRefresh: () => void;
+  onUpdateWorkOrder: (id: string, status: WorkOrderStatus) => Promise<void>;
+}
+
+const getServiceStatus = (status: WorkOrderStatus): BikeServiceStatus => {
+  switch (status) {
+    case "WAITING_PARTS":
+      return "WAITING_PARTS";
+    case "IN_PROGRESS":
+    case "QUALITY_CHECK":
+      return "IN_PROGRESS";
+    case "READY_FOR_DELIVERY":
+      return "READY_FOR_DELIVERY";
+    case "DELIVERED":
+      return "COMPLETED";
+    case "CANCELLED":
+      return "CANCELLED";
+    default:
+      return "PENDING";
+  }
+};
+
+const fromWorkOrder = (order: WorkOrder): BikeService => {
+  const bikeBrand = order.equipmentSnapshot?.brand || "Bicicleta";
+  const bikeModel = order.equipmentSnapshot?.model || "Modelo pendiente";
+  const serviceType = order.parts?.length ? "Servicio y repuestos" : "Servicio de taller";
+  const workItems = [
+    serviceType,
+    ...(order.intakeChecklist?.damagesReported ?? []),
+    ...(order.parts ?? []).map((part) => `${part.name} (${part.quantity})`),
+  ];
+
+  return {
+    id: order.id,
+    folio: order.folio,
+    customerName: order.customerId || "Cliente sin registro",
+    contact: "",
+    bikeBrand,
+    bikeModel,
+    serviceType,
+    workItems,
+    deliveryDate: order.deliveryDate ?? "",
+    notes: "",
+    status: getServiceStatus(order.status),
+    source: "api",
+    workOrderStatus: order.status,
+    createdAt: order.createdAt,
+    ...(order.status === "DELIVERED" && order.updatedAt ? { completedAt: order.updatedAt } : {}),
+  };
+};
+
+const serviceToWorkOrderStatus = (status: BikeServiceStatus): WorkOrderStatus | null => {
+  switch (status) {
+    case "PENDING":
+      return "IN_DIAGNOSIS";
+    case "IN_PROGRESS":
+      return "IN_PROGRESS";
+    case "WAITING_PARTS":
+      return "WAITING_PARTS";
+    case "READY_FOR_DELIVERY":
+      return "READY_FOR_DELIVERY";
+    case "COMPLETED":
+      return "DELIVERED";
+    default:
+      return null;
+  }
+};
+
+const statusRank: Record<BikeServiceStatus, number> = {
+  PENDING: 0,
+  IN_PROGRESS: 1,
+  WAITING_PARTS: 1,
+  READY_FOR_DELIVERY: 2,
+  COMPLETED: 3,
+  CANCELLED: 3,
+};
+
+const ALLOWED_WORK_ORDER_TRANSITIONS: Record<WorkOrderStatus, readonly WorkOrderStatus[]> = {
+  RECEIVED: ["IN_DIAGNOSIS", "CANCELLED"],
+  IN_DIAGNOSIS: ["WAITING_PARTS", "IN_PROGRESS", "CANCELLED"],
+  WAITING_PARTS: ["IN_PROGRESS", "CANCELLED"],
+  IN_PROGRESS: ["QUALITY_CHECK", "WAITING_PARTS", "CANCELLED"],
+  QUALITY_CHECK: ["READY_FOR_DELIVERY", "IN_PROGRESS"],
+  READY_FOR_DELIVERY: ["DELIVERED"],
+  DELIVERED: [],
+  CANCELLED: [],
+};
+
+const findWorkOrderStatusPath = (
+  currentStatus: WorkOrderStatus,
+  targetStatus: WorkOrderStatus,
+): WorkOrderStatus[] | null => {
+  const queue: { status: WorkOrderStatus; path: WorkOrderStatus[] }[] = [
+    { status: currentStatus, path: [] },
+  ];
+  const visited = new Set<WorkOrderStatus>([currentStatus]);
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) continue;
+    for (const nextStatus of ALLOWED_WORK_ORDER_TRANSITIONS[current.status]) {
+      if (visited.has(nextStatus)) continue;
+      const path = [...current.path, nextStatus];
+      if (nextStatus === targetStatus) return path;
+      visited.add(nextStatus);
+      queue.push({ status: nextStatus, path });
+    }
+  }
+
+  return null;
+};
+
+export function DashboardPage({
+  userName,
+  orders,
+  loading,
+  error,
+  onLogout,
+  onRefresh,
+  onUpdateWorkOrder,
+}: DashboardPageProps) {
+  const [localServices, setLocalServices] = useState<BikeService[]>([]);
+  const [isNewServiceOpen, setIsNewServiceOpen] = useState(false);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[] | null>(null);
+  const remoteServices = orders.map(fromWorkOrder);
+  const services = [...remoteServices, ...localServices];
+  const selectedServices = selectedServiceIds
+    ? services.filter((service) => selectedServiceIds.includes(service.id))
+    : [];
+  const activeServices = services.filter(
+    (service) => service.status !== "COMPLETED" && service.status !== "CANCELLED",
+  );
+  const todayKey = toLocalDateKey(new Date());
+  const thisMonth = new Date();
+  const completedThisMonth = services.filter((service) => {
+    if (service.status !== "COMPLETED") return false;
+    const completedDate = new Date(service.completedAt ?? service.createdAt);
+    return (
+      completedDate.getFullYear() === thisMonth.getFullYear() &&
+      completedDate.getMonth() === thisMonth.getMonth()
+    );
+  }).length;
+
+  const createService = (data: NewBikeServiceData) => {
+    const createdAt = new Date().toISOString();
+    const service: BikeService = {
+      ...data,
+      id: `local-${crypto.randomUUID()}`,
+      folio: `WEB-${String(localServices.length + 1).padStart(4, "0")}`,
+      workItems: [data.serviceType, ...(data.notes.trim() ? [data.notes.trim()] : [])],
+      status: "PENDING",
+      source: "local",
+      createdAt,
+    };
+    setLocalServices((current) => [service, ...current]);
+    setIsNewServiceOpen(false);
+  };
+
+  const updateServiceStatus = async (service: BikeService, status: BikeServiceStatus) => {
+    if (service.status === status) return;
+    if (service.source === "local") {
+      setLocalServices((current) =>
+        current.map((item) => (item.id === service.id ? { ...item, status } : item)),
+      );
+      return;
+    }
+
+    const targetStatus = serviceToWorkOrderStatus(status);
+    if (!targetStatus || !service.workOrderStatus) return;
+    if (statusRank[status] < statusRank[service.status]) return;
+    const path = findWorkOrderStatusPath(service.workOrderStatus, targetStatus);
+    if (!path) return;
+    for (const nextStatus of path) {
+      await onUpdateWorkOrder(service.id, nextStatus);
+    }
+  };
+
+  return (
+    <main className="dashboard-page">
+      <DashboardHeader
+        userName={userName}
+        onAddService={() => setIsNewServiceOpen(true)}
+        onLogout={onLogout}
+      />
+
+      <div className="dashboard-subhead">
+        <div>
+          <p className="dashboard-section-label">RESUMEN DEL TALLER</p>
+          <h1>Operación diaria</h1>
+        </div>
+        <button className="refresh-button" type="button" onClick={onRefresh} disabled={loading}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 7v5h-5M4 17v-5h5" />
+            <path d="M5.6 9a7 7 0 0 1 11.9-2L20 12M4 12l2.5 5a7 7 0 0 0 11.9-2" />
+          </svg>
+          Actualizar
+        </button>
+      </div>
+
+      {error && (
+        <p className="dashboard-error" role="alert">
+          {error}
+        </p>
+      )}
+
+      <section className="kpi-strip" aria-label="Indicadores del taller">
+        <article className="kpi-item">
+          <span className="kpi-icon kpi-icon-lime" aria-hidden="true">
+            ↻
+          </span>
+          <div>
+            <p>Servicios pendientes</p>
+            <strong>{services.filter((item) => item.status === "PENDING").length}</strong>
+          </div>
+        </article>
+        <article className="kpi-item">
+          <span className="kpi-icon kpi-icon-red" aria-hidden="true">
+            ◷
+          </span>
+          <div>
+            <p>Entregas para hoy</p>
+            <strong>
+              {activeServices.filter((item) => item.deliveryDate.slice(0, 10) === todayKey).length}
+            </strong>
+          </div>
+        </article>
+        <article className="kpi-item">
+          <span className="kpi-icon kpi-icon-amber" aria-hidden="true">
+            ⌑
+          </span>
+          <div>
+            <p>En espera de repuestos</p>
+            <strong>{services.filter((item) => item.status === "WAITING_PARTS").length}</strong>
+          </div>
+        </article>
+        <article className="kpi-item">
+          <span className="kpi-icon kpi-icon-green" aria-hidden="true">
+            ✓
+          </span>
+          <div>
+            <p>Finalizados este mes</p>
+            <strong>{completedThisMonth}</strong>
+          </div>
+        </article>
+      </section>
+
+      <div className="dashboard-content-grid">
+        <PendingServicesCard
+          services={services}
+          onSelectService={(service) => setSelectedServiceIds([service.id])}
+        />
+        <WorkshopCalendar
+          services={services}
+          onSelectDeliveries={(_date, dayServices) =>
+            setSelectedServiceIds(dayServices.map((service) => service.id))
+          }
+        />
+      </div>
+
+      {isNewServiceOpen && (
+        <NewServiceModal onClose={() => setIsNewServiceOpen(false)} onCreate={createService} />
+      )}
+      {selectedServiceIds && selectedServices.length > 0 && (
+        <ServiceDetailModal
+          services={selectedServices}
+          onClose={() => setSelectedServiceIds(null)}
+          onStatusChange={(service, status) => {
+            void updateServiceStatus(service, status).catch(() => undefined);
+          }}
+        />
+      )}
+    </main>
+  );
+}

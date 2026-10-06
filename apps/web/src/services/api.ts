@@ -24,6 +24,16 @@ export interface WorkOrder {
   laborCost: number;
   totalCost: number;
   createdAt: string;
+  updatedAt?: string;
+  deliveryDate?: string;
+  parts?: { name: string; sku: string; quantity: number }[];
+  intakeChecklist?: { damagesReported: string[] };
+}
+
+export interface AuthenticatedUser {
+  id: string;
+  name: string;
+  email: string;
 }
 
 export interface InventoryItem {
@@ -79,6 +89,10 @@ class ApiClient {
 
   public getWorkOrders(): Promise<WorkOrder[]> {
     return this.request<WorkOrder[]>("/work-orders");
+  }
+
+  public getCurrentUser(): Promise<{ user: AuthenticatedUser }> {
+    return this.request<{ user: AuthenticatedUser }>("/users/me");
   }
 
   public createWorkOrder(payload: {
