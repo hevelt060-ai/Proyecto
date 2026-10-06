@@ -42,12 +42,7 @@ export function App() {
     api.setToken(null);
     localStorage.clear();
     sessionStorage.clear();
-    setToken(null);
-    setAuthMode("login");
-    clearAuthForm();
-    setOrders([]);
-    setInventory([]);
-    setActiveTab("orders");
+    window.location.replace("/login");
   };
 
   useEffect(() => {
@@ -163,7 +158,7 @@ export function App() {
           </p>
 
           <form
-            key={authMode}
+            key={authMode === "register" ? "register" : "login"}
             className="auth-form"
             onSubmit={handleAuthentication}
             autoComplete="off"
