@@ -23,17 +23,25 @@ export function App() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [activeTab, setActiveTab] = useState<"orders" | "inventory">("orders");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
   const [serialNumber, setSerialNumber] = useState("");
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
   const [laborCost, setLaborCost] = useState(350);
 
+  const clearAuthForm = () => {
+    setName("");
+    setEmail("");
+    setPassword("");
+    setError("");
+    setShowPassword(false);
+  };
+
   const loadData = async () => {
     if (!token) return;
     setLoading(true);
-    setError(null);
+    setError("");
     try {
       const [fetchedOrders, fetchedInventory] = await Promise.all([
         api.getWorkOrders(),
@@ -56,7 +64,7 @@ export function App() {
     e.preventDefault();
     if (authSubmitting.current) return;
     authSubmitting.current = true;
-    setError(null);
+    setError("");
     setLoading(true);
     try {
       const result =
@@ -67,6 +75,7 @@ export function App() {
               email,
               password,
             });
+      clearAuthForm();
       api.setToken(result.token);
       setToken(result.token);
     } catch (err: any) {
@@ -136,14 +145,14 @@ export function App() {
               : "Registra tu taller y empieza a organizar el trabajo."}
           </p>
 
-          <form className="auth-form" onSubmit={handleAuthentication}>
+          <form className="auth-form" onSubmit={handleAuthentication} autoComplete="off">
             {authMode === "register" && (
               <>
                 <label htmlFor="auth-name">Nombre completo</label>
                 <input
                   id="auth-name"
                   type="text"
-                  autoComplete="name"
+                  autoComplete="off"
                   placeholder="Tu nombre"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
@@ -158,7 +167,7 @@ export function App() {
             <input
               id="auth-email"
               type="email"
-              autoComplete="email"
+              autoComplete="off"
               placeholder="correo@ejemplo.com"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -170,7 +179,7 @@ export function App() {
               <input
                 id="auth-password"
                 type={showPassword ? "text" : "password"}
-                autoComplete={authMode === "login" ? "current-password" : "new-password"}
+                autoComplete="off"
                 placeholder="••••••••••••"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -223,8 +232,8 @@ export function App() {
             <button
               type="button"
               onClick={() => {
+                clearAuthForm();
                 setAuthMode((mode) => (mode === "login" ? "register" : "login"));
-                setError(null);
               }}
             >
               {authMode === "login" ? "Regístrate" : "Inicia sesión"}
@@ -263,6 +272,8 @@ export function App() {
           <button
             onClick={() => {
               api.setToken(null);
+              setAuthMode("login");
+              clearAuthForm();
               setToken(null);
             }}
           >
