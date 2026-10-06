@@ -38,6 +38,23 @@ export function App() {
     setShowPassword(false);
   };
 
+  const logout = () => {
+    api.setToken(null);
+    localStorage.clear();
+    sessionStorage.clear();
+    setToken(null);
+    setAuthMode("login");
+    clearAuthForm();
+    setOrders([]);
+    setInventory([]);
+    setActiveTab("orders");
+  };
+
+  useEffect(() => {
+    setEmail("");
+    setPassword("");
+  }, []);
+
   const loadData = async () => {
     if (!token) return;
     setLoading(true);
@@ -145,7 +162,12 @@ export function App() {
               : "Registra tu taller y empieza a organizar el trabajo."}
           </p>
 
-          <form className="auth-form" onSubmit={handleAuthentication} autoComplete="off">
+          <form
+            key={authMode}
+            className="auth-form"
+            onSubmit={handleAuthentication}
+            autoComplete="off"
+          >
             {authMode === "register" && (
               <>
                 <label htmlFor="auth-name">Nombre completo</label>
@@ -168,6 +190,8 @@ export function App() {
               id="auth-email"
               type="email"
               autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
               placeholder="correo@ejemplo.com"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -179,7 +203,7 @@ export function App() {
               <input
                 id="auth-password"
                 type={showPassword ? "text" : "password"}
-                autoComplete="off"
+                autoComplete="new-password"
                 placeholder="••••••••••••"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -269,16 +293,7 @@ export function App() {
           >
             Inventario ({inventory.length})
           </button>
-          <button
-            onClick={() => {
-              api.setToken(null);
-              setAuthMode("login");
-              clearAuthForm();
-              setToken(null);
-            }}
-          >
-            Cerrar sesión
-          </button>
+          <button onClick={logout}>Cerrar sesión</button>
         </div>
       </header>
 
