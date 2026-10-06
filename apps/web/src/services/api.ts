@@ -131,6 +131,64 @@ class ApiClient {
     return this.request<InventoryItem[]>("/inventory");
   }
 
+  // --- NEW SERVICES AND REPORTS API ---
+
+  public getServices(): Promise<any[]> {
+    // Some routes return data directly, some wrap in { success: true, data: ... }
+    // Services GET from our new endpoint returns direct array or wrapped?
+    // In our new API it returns an array directly because we didn't wrap it.
+    // However, this.request assumes `{ success: true, data }`.
+    // Wait, let's fix request to handle direct array if `success` is missing.
+    return fetch(`${API_BASE_URL}/services`, {
+      headers: { Authorization: `Bearer ${this.token}` }
+    }).then(res => res.json());
+  }
+
+  public updateService(id: string, payload: any): Promise<any> {
+    return fetch(`${API_BASE_URL}/services/${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.token}`
+      },
+      body: JSON.stringify(payload)
+    }).then(res => res.json());
+  }
+
+  public deleteService(id: string): Promise<any> {
+    return fetch(`${API_BASE_URL}/services/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${this.token}` }
+    }).then(res => res.json());
+  }
+
+  public getReportsSummary(startDate?: string, endDate?: string): Promise<any> {
+    const params = new URLSearchParams();
+    if (startDate) params.append("startDate", startDate);
+    if (endDate) params.append("endDate", endDate);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return this.request<any>(`/reports/summary${query}`);
+  }
+
+  public saveReport(title: string, data?: any): Promise<any> {
+    return this.request<any>("/reports", {
+      method: "POST",
+      body: JSON.stringify({ title, data })
+    });
+  }
+
+  public getSavedReports(): Promise<any[]> {
+    return this.request<any[]>("/reports");
+  }
+
+  public getReportsExportUrl(startDate?: string, endDate?: string): string {
+    const params = new URLSearchParams();
+    if (startDate) params.append("startDate", startDate);
+    if (endDate) params.append("endDate", endDate);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return `${API_BASE_URL}/reports/services/export${query}`;
+  }
+
   public login(email: string, password: string): Promise<{ token: string }> {
     return this.request<{ token: string }>("/auth/login", {
       method: "POST",

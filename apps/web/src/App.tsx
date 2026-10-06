@@ -31,18 +31,13 @@ export function App() {
     window.location.replace("/login");
   };
 
-  useEffect(() => {
-    setEmail("");
-    setPassword("");
-  }, []);
-
   const loadData = async () => {
     if (!token) return;
     setLoading(true);
     setError("");
     try {
       const [fetchedOrders, profile] = await Promise.all([
-        api.getWorkOrders(),
+        api.getServices(),
         api.getCurrentUser(),
       ]);
       setOrders(fetchedOrders);
@@ -55,7 +50,25 @@ export function App() {
   };
 
   useEffect(() => {
-    if (token) loadData();
+    if (token) {
+      loadData();
+      
+      const evtSource = new EventSource('https://erp-api-backend.onrender.com/api/v1/sync');
+      evtSource.onmessage = (event) => {
+        // Just log or trigger refresh if necessary
+        console.log("SSE update:", event.data);
+      };
+      const interval = setInterval(() => {
+         api.getServices().then(setOrders).catch(() => {});
+      }, 10000);
+      
+      window.addEventListener("focus", loadData);
+      
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener("focus", loadData);
+      };
+    }
   }, [token]);
 
   const handleAuthentication = async (e: FormEvent) => {
@@ -232,6 +245,14 @@ export function App() {
       onLogout={logout}
       onRefresh={loadData}
       onUpdateWorkOrder={handleWorkOrderStatusChange}
+      onDeleteService={async (id) => {
+        await api.deleteService(id);
+        setOrders(curr => curr.filter(o => o.id !== id));
+      }}
+      onEditService={async (id, payload) => {
+        await api.updateService(id, payload);
+        await loadData();
+      }}
     />
   );
 }

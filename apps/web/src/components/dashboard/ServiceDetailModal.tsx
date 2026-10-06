@@ -5,6 +5,8 @@ interface ServiceDetailModalProps {
   services: BikeService[];
   onClose: () => void;
   onStatusChange: (service: BikeService, status: BikeServiceStatus) => void;
+  onEdit?: (service: BikeService) => void;
+  onDelete?: (service: BikeService) => void;
 }
 
 const STATUS_OPTIONS: BikeServiceStatus[] = [

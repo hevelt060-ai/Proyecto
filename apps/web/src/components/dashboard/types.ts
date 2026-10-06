@@ -7,7 +7,7 @@ export type BikeServiceSource = "api" | "local";
 
 export interface BikeService {
   id: string;
-  folio: string;
+  folio?: string;
   customerName: string;
   contact: string;
   bikeBrand: string;
@@ -21,6 +21,8 @@ export interface BikeService {
   workOrderStatus?: WorkOrderStatus | undefined;
   createdAt: string;
   completedAt?: string | undefined;
+  laborCost?: number;
+  totalCost?: number;
 }
 
 export interface NewBikeServiceData {

@@ -298,7 +298,6 @@ export function DashboardPage({
           onClose={() => setServiceToEdit(null)}
           onSave={onEditService}
         />
-      )}
       {selectedServiceIds && selectedServices.length > 0 && (
         <ServiceDetailModal
           services={selectedServices}
