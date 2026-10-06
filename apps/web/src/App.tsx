@@ -13,7 +13,7 @@ const STATUS_COLUMNS: WorkOrderStatus[] = [
 
 export function App() {
   const [token, setToken] = useState<string | null>(api.getToken());
-  const [email, setEmail] = useState("admin@taller.local");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
@@ -159,7 +159,7 @@ export function App() {
               id="auth-email"
               type="email"
               autoComplete="email"
-              placeholder="nombre@ejemplo.com"
+              placeholder="correo@ejemplo.com"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               required
@@ -218,48 +218,6 @@ export function App() {
             </button>
           </form>
 
-          <div className="auth-divider">
-            <span>Or authorize with</span>
-          </div>
-          <div className="social-actions">
-            <button
-              type="button"
-              className="social-button"
-              disabled
-              title="Google no está configurado"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  fill="#4285F4"
-                  d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.8 3-4.3 3-7.3Z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 22c2.7 0 5-.9 6.7-2.5l-3.2-2.5c-.9.6-2.1 1-3.5 1-2.7 0-5-1.8-5.8-4.3H3v2.6A10 10 0 0 0 12 22Z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M6.2 13.7a6 6 0 0 1 0-3.4V7.7H3a10 10 0 0 0 0 8.6l3.2-2.6Z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 6c1.5 0 2.8.5 3.8 1.5l2.9-2.9A9.6 9.6 0 0 0 12 2a10 10 0 0 0-9 5.7l3.2 2.6C7 7.8 9.3 6 12 6Z"
-                />
-              </svg>
-              Google
-            </button>
-            <button
-              type="button"
-              className="social-button"
-              disabled
-              title="Apple no está configurado"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
-                <path d="M16.6 12.8c0-2.1 1.7-3.1 1.8-3.2a3.9 3.9 0 0 0-3.1-1.7c-1.3-.1-2.6.8-3.3.8s-1.8-.8-2.9-.8a4.3 4.3 0 0 0-3.6 2.2c-1.5 2.6-.4 6.5 1.1 8.6.7 1 1.5 2.1 2.6 2.1 1 0 1.4-.7 2.7-.7s1.7.7 2.8.7 1.8-1 2.4-2c.8-1.1 1.1-2.2 1.1-2.3-.1 0-2.1-.8-2.1-3.7ZM14.4 6.5c.6-.8 1.1-1.9 1-3-.9 0-2.1.6-2.8 1.4-.6.7-1.2 1.8-1 2.9 1.1.1 2.2-.5 2.8-1.3Z" />
-              </svg>
-              Apple
-            </button>
-          </div>
           <p className="auth-switch">
             {authMode === "login" ? "¿No tienes cuenta?" : "¿Ya tienes una cuenta?"}{" "}
             <button
