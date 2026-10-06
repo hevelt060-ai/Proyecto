@@ -1,3 +1,4 @@
+import dns from "node:dns";
 import { randomUUID } from "node:crypto";
 
 import express, { type NextFunction, type Request, type Response } from "express";
@@ -24,6 +25,8 @@ import {
   type TenantContext,
 } from "@erp/identity";
 import { InMemoryOrganizationStore, OrganizationService } from "@erp/organization";
+
+dns.setDefaultResultOrder("ipv4first");
 
 interface RequestContext extends Request {
   requestId: string;

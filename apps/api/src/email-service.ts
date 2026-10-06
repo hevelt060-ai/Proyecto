@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import type SMTPTransport from "nodemailer/lib/smtp-transport";
 
 export interface WelcomeEmail {
   name: string;
@@ -37,8 +38,10 @@ export class EmailService {
             host,
             port,
             secure: port === 465,
+            family: 4,
+            socketTimeout: 60_000,
             auth: { user, pass },
-          })
+          } as SMTPTransport.Options & { family: 4 })
         : null;
   }
 
