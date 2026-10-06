@@ -5,6 +5,7 @@ import { z, ZodError } from "zod";
 
 import { loadConfig, type AppConfig } from "@erp/config";
 import { WorkshopDomainService, connectDatabase, ensureIndexes, getDatabase } from "@erp/database";
+import { EmailService } from "./email-service.js";
 import {
   AuthenticationError,
   AuthorizationError,
@@ -35,6 +36,7 @@ export interface ApiDependencies {
   organization?: OrganizationService;
   audit?: InMemoryAuditLogger;
   rateLimiter?: RateLimiter;
+  emailService?: Pick<EmailService, "sendWelcomeEmail">;
 }
 
 export interface RateLimiter {
@@ -65,8 +67,11 @@ const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(12),
   name: z.string().min(2).max(120),
-  tenantName: z.string().min(2).max(120),
-  tenantSlug: z.string().regex(/^[a-z0-9-]{3,64}$/),
+  tenantName: z.string().min(2).max(120).optional(),
+  tenantSlug: z
+    .string()
+    .regex(/^[a-z0-9-]{3,64}$/)
+    .optional(),
 });
 
 const loginSchema = z.object({
@@ -156,13 +161,15 @@ const publicError = (
   if (error instanceof DomainError)
     return {
       status:
-        error.code === "NOT_FOUND"
-          ? 404
-          : error.code === "CONFLICT"
-            ? 409
-            : error.code === "RATE_LIMITED"
-              ? 429
-              : 400,
+        error.code === "USER_LIMIT_REACHED"
+          ? 403
+          : error.code === "NOT_FOUND"
+            ? 404
+            : error.code === "CONFLICT"
+              ? 409
+              : error.code === "RATE_LIMITED"
+                ? 429
+                : 400,
       code: error.code,
       message: error.message,
       details: error.details,
@@ -184,6 +191,7 @@ export const createApp = (dependencies: ApiDependencies = {}) => {
   const rateLimiter =
     dependencies.rateLimiter ??
     new InMemoryRateLimiter(config.rateLimitMax, config.rateLimitWindowMs);
+  const emailService = dependencies.emailService ?? new EmailService();
   const app = express();
 
   app.disable("x-powered-by");
@@ -282,47 +290,59 @@ export const createApp = (dependencies: ApiDependencies = {}) => {
     }),
   );
 
-  app.post(`${config.apiPrefix}/auth/register`, async (request, response, next) => {
-    try {
-      if (!rateLimiter.check(`register:${request.ip}`))
-        throw new DomainError("RATE_LIMITED", "Too many requests");
-      const result = await identity.register(registerSchema.parse(request.body));
-      await audit.record({
-        id: randomUUID(),
-        tenantId: result.tenant.id,
-        userId: result.user.id,
-        action: "user.created",
-        resource: "user",
-        resourceId: result.user.id,
-        timestamp: new Date(),
-        requestId: (request as RequestContext).requestId,
-        metadata: {},
-      });
-      await audit.record({
-        id: randomUUID(),
-        tenantId: result.tenant.id,
-        userId: result.user.id,
-        action: "tenant.created",
-        resource: "tenant",
-        resourceId: result.tenant.id,
-        timestamp: new Date(),
-        requestId: (request as RequestContext).requestId,
-        metadata: {},
-      });
-      response.status(201).json({
-        success: true,
-        data: {
-          user: result.user,
-          tenant: result.tenant,
-          token: result.token,
-          context: result.context,
-        },
-        requestId: (request as RequestContext).requestId,
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
+  app.post(
+    [`${config.apiPrefix}/auth/register`, "/auth/register"],
+    async (request, response, next) => {
+      try {
+        if (!rateLimiter.check(`register:${request.ip}`))
+          throw new DomainError("RATE_LIMITED", "Too many requests");
+        const result = await identity.register(registerSchema.parse(request.body));
+        void emailService
+          .sendWelcomeEmail({
+            name: result.user.name,
+            email: result.user.email,
+            tenantName: result.tenant.name,
+            role: "tenant.owner",
+          })
+          .catch((error: unknown) => console.error("Welcome email delivery failed", error));
+        await audit.record({
+          id: randomUUID(),
+          tenantId: result.tenant.id,
+          userId: result.user.id,
+          action: "user.created",
+          resource: "user",
+          resourceId: result.user.id,
+          timestamp: new Date(),
+          requestId: (request as RequestContext).requestId,
+          metadata: {},
+        });
+        if (result.tenantCreated)
+          await audit.record({
+            id: randomUUID(),
+            tenantId: result.tenant.id,
+            userId: result.user.id,
+            action: "tenant.created",
+            resource: "tenant",
+            resourceId: result.tenant.id,
+            timestamp: new Date(),
+            requestId: (request as RequestContext).requestId,
+            metadata: {},
+          });
+        response.status(201).json({
+          success: true,
+          data: {
+            user: result.user,
+            tenant: result.tenant,
+            token: result.token,
+            context: result.context,
+          },
+          requestId: (request as RequestContext).requestId,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   app.post([`${config.apiPrefix}/auth/login`, "/auth/login"], async (request, response, next) => {
     try {

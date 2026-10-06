@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type WorkOrder, type WorkOrderStatus, type InventoryItem } from "./services/api";
 
 const STATUS_COLUMNS: WorkOrderStatus[] = [
@@ -15,6 +15,10 @@ export function App() {
   const [token, setToken] = useState<string | null>(api.getToken());
   const [email, setEmail] = useState("admin@taller.local");
   const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [showPassword, setShowPassword] = useState(false);
+  const authSubmitting = useRef(false);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [activeTab, setActiveTab] = useState<"orders" | "inventory">("orders");
@@ -48,17 +52,27 @@ export function App() {
     if (token) loadData();
   }, [token]);
 
-  const handleLogin = async (e: FormEvent) => {
+  const handleAuthentication = async (e: FormEvent) => {
     e.preventDefault();
+    if (authSubmitting.current) return;
+    authSubmitting.current = true;
     setError(null);
     setLoading(true);
     try {
-      const result = await api.login(email, password);
+      const result =
+        authMode === "login"
+          ? await api.login(email, password)
+          : await api.register({
+              name,
+              email,
+              password,
+            });
       api.setToken(result.token);
       setToken(result.token);
     } catch (err: any) {
-      setError(err.message || "Credenciales inválidas");
+      setError(err.message || "No fue posible completar la solicitud");
     } finally {
+      authSubmitting.current = false;
       setLoading(false);
     }
   };
@@ -102,34 +116,163 @@ export function App() {
 
   if (!token) {
     return (
-      <main style={{ padding: 40, fontFamily: "sans-serif", maxWidth: 400, margin: "60px auto" }}>
-        <h2>Taller ERP - Autenticación</h2>
-        {error && <p style={{ color: "#d32f2f" }}>{error}</p>}
-        <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label>
-            Correo electrónico
+      <main className="auth-page">
+        <section className="auth-panel" aria-labelledby="auth-title">
+          <div className="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" role="presentation">
+              <path
+                d="M16 3.5 18.8 12l8.7-3.5-3.5 8.7 8.5 2.8-8.5 2.8 3.5 8.7-8.7-3.5L16 36.5l-2.8-8.5-8.7 3.5L8 22.8l-8.5-2.8L8 17.2 4.5 8.5l8.7 3.5L16 3.5Z"
+                transform="translate(0 -4)"
+              />
+            </svg>
+          </div>
+          <p className="auth-eyebrow">TALLER ERP</p>
+          <h1 id="auth-title">
+            {authMode === "login" ? "Login to Workshop ERP" : "Create your account"}
+          </h1>
+          <p className="auth-subtitle">
+            {authMode === "login"
+              ? "Accede a tu espacio de trabajo y sigue con la operación."
+              : "Registra tu taller y empieza a organizar el trabajo."}
+          </p>
+
+          <form className="auth-form" onSubmit={handleAuthentication}>
+            {authMode === "register" && (
+              <>
+                <label htmlFor="auth-name">Nombre completo</label>
+                <input
+                  id="auth-name"
+                  type="text"
+                  autoComplete="name"
+                  placeholder="Tu nombre"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  minLength={2}
+                  maxLength={120}
+                  required
+                  disabled={loading}
+                />
+              </>
+            )}
+            <label htmlFor="auth-email">Correo electrónico</label>
             <input
+              id="auth-email"
               type="email"
+              autoComplete="email"
+              placeholder="nombre@ejemplo.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(event) => setEmail(event.target.value)}
               required
-              style={{ width: "100%", padding: 8, marginTop: 4 }}
+              disabled={loading}
             />
-          </label>
-          <label>
-            Contraseña
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              style={{ width: "100%", padding: 8, marginTop: 4 }}
-            />
-          </label>
-          <button type="submit" disabled={loading} style={{ padding: 10, cursor: "pointer" }}>
-            {loading ? "Verificando..." : "Ingresar"}
-          </button>
-        </form>
+            <label htmlFor="auth-password">Contraseña</label>
+            <div className="password-field">
+              <input
+                id="auth-password"
+                type={showPassword ? "text" : "password"}
+                autoComplete={authMode === "login" ? "current-password" : "new-password"}
+                placeholder="••••••••••••"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                minLength={authMode === "register" ? 12 : 1}
+                required
+                disabled={loading}
+              />
+              <button
+                className="password-toggle"
+                type="button"
+                aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                aria-pressed={showPassword}
+                onClick={() => setShowPassword((visible) => !visible)}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  {showPassword ? (
+                    <>
+                      <path d="M3 3 21 21M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+                      <path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c5.2 0 8.6 4.7 9.5 6.2a1.5 1.5 0 0 1 0 1.6 15 15 0 0 1-3 3.4M6.2 6.2a15.6 15.6 0 0 0-3.7 5 1.5 1.5 0 0 0 0 1.6C3.4 14.3 6.8 19 12 19c1.1 0 2.1-.2 3-.6" />
+                    </>
+                  ) : (
+                    <>
+                      <path d="M2.5 12s3.4-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.4 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+                      <circle cx="12" cy="12" r="2.5" />
+                    </>
+                  )}
+                </svg>
+              </button>
+            </div>
+
+            {error && (
+              <p className="auth-error" role="alert">
+                {error}
+              </p>
+            )}
+            <button className="auth-submit" type="submit" disabled={loading}>
+              {loading && <span className="loading-spinner" aria-hidden="true" />}
+              {loading
+                ? authMode === "login"
+                  ? "Iniciando sesión..."
+                  : "Creando cuenta..."
+                : authMode === "login"
+                  ? "Iniciar sesión"
+                  : "Crear cuenta"}
+            </button>
+          </form>
+
+          <div className="auth-divider">
+            <span>Or authorize with</span>
+          </div>
+          <div className="social-actions">
+            <button
+              type="button"
+              className="social-button"
+              disabled
+              title="Google no está configurado"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="#4285F4"
+                  d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.8 3-4.3 3-7.3Z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 22c2.7 0 5-.9 6.7-2.5l-3.2-2.5c-.9.6-2.1 1-3.5 1-2.7 0-5-1.8-5.8-4.3H3v2.6A10 10 0 0 0 12 22Z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M6.2 13.7a6 6 0 0 1 0-3.4V7.7H3a10 10 0 0 0 0 8.6l3.2-2.6Z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 6c1.5 0 2.8.5 3.8 1.5l2.9-2.9A9.6 9.6 0 0 0 12 2a10 10 0 0 0-9 5.7l3.2 2.6C7 7.8 9.3 6 12 6Z"
+                />
+              </svg>
+              Google
+            </button>
+            <button
+              type="button"
+              className="social-button"
+              disabled
+              title="Apple no está configurado"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                <path d="M16.6 12.8c0-2.1 1.7-3.1 1.8-3.2a3.9 3.9 0 0 0-3.1-1.7c-1.3-.1-2.6.8-3.3.8s-1.8-.8-2.9-.8a4.3 4.3 0 0 0-3.6 2.2c-1.5 2.6-.4 6.5 1.1 8.6.7 1 1.5 2.1 2.6 2.1 1 0 1.4-.7 2.7-.7s1.7.7 2.8.7 1.8-1 2.4-2c.8-1.1 1.1-2.2 1.1-2.3-.1 0-2.1-.8-2.1-3.7ZM14.4 6.5c.6-.8 1.1-1.9 1-3-.9 0-2.1.6-2.8 1.4-.6.7-1.2 1.8-1 2.9 1.1.1 2.2-.5 2.8-1.3Z" />
+              </svg>
+              Apple
+            </button>
+          </div>
+          <p className="auth-switch">
+            {authMode === "login" ? "¿No tienes cuenta?" : "¿Ya tienes una cuenta?"}{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode((mode) => (mode === "login" ? "register" : "login"));
+                setError(null);
+              }}
+            >
+              {authMode === "login" ? "Regístrate" : "Inicia sesión"}
+            </button>
+          </p>
+        </section>
       </main>
     );
   }

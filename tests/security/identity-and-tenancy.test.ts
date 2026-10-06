@@ -86,6 +86,38 @@ describe("identity and tenant isolation", () => {
     ).toBe(true);
   });
 
+  it("limits all tenants to three equally privileged administrators", async () => {
+    const app = createApp({
+      config: loadConfig("test"),
+      emailService: { sendWelcomeEmail: async () => undefined },
+    });
+    const register = (email: string, endpoint: string, tenantSlug?: string) =>
+      request(app)
+        .post(endpoint)
+        .send({
+          email,
+          password: "correct horse battery",
+          name: "Workshop Admin",
+          ...(tenantSlug ? { tenantName: `Workshop ${tenantSlug}`, tenantSlug } : {}),
+        });
+
+    const first = await register("first@example.com", "/api/v1/auth/register");
+    const second = await register("second@example.com", "/auth/register", "second-workshop");
+    const third = await register("third@example.com", "/api/v1/auth/register", "third-workshop");
+
+    expect([first.status, second.status, third.status]).toEqual([201, 201, 201]);
+    expect(second.body.data.tenant.id).not.toBe(first.body.data.tenant.id);
+    expect(third.body.data.context.roles).toEqual(["tenant.owner"]);
+    expect(second.body.data.context.permissions).toEqual(first.body.data.context.permissions);
+    expect(third.body.data.context.permissions).toEqual(first.body.data.context.permissions);
+
+    const fourth = await register("fourth@example.com", "/auth/register");
+    expect(fourth.status).toBe(403);
+    expect(fourth.body.error.message).toBe(
+      "Límite alcanzado: el sistema solo permite un máximo de 3 usuarios administradores.",
+    );
+  });
+
   it("does not trust a tenantId in a body to change the authenticated scope", async () => {
     const app = createApp({ config: loadConfig("test") });
     const registered = await request(app).post("/api/v1/auth/register").send({

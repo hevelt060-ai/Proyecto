@@ -123,6 +123,17 @@ class ApiClient {
       body: JSON.stringify({ email, password }),
     });
   }
+
+  public register(input: {
+    name: string;
+    email: string;
+    password: string;
+  }): Promise<{ token: string }> {
+    return this.request<{ token: string }>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
 }
 
 export const api = new ApiClient();

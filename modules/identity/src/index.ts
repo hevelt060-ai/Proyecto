@@ -7,6 +7,7 @@ import {
   AuthenticationError,
   AuthorizationError,
   ConflictError,
+  DomainError,
   NotFoundError,
   TenantAccessDeniedError,
   ValidationError,
@@ -100,8 +101,8 @@ export interface RegisterInput {
   email: string;
   password: string;
   name: string;
-  tenantName: string;
-  tenantSlug: string;
+  tenantName?: string | undefined;
+  tenantSlug?: string | undefined;
 }
 
 export interface IdentityStore {
@@ -120,6 +121,7 @@ export interface IdentityStore {
     update: Pick<TenantMembership, "roles" | "scopes" | "status">,
   ): Promise<void>;
   findMembership(userId: UserId, tenantId: TenantId): Promise<TenantMembership | undefined>;
+  countUsers(): Promise<number>;
   listMemberships(userId: UserId): Promise<TenantMembership[]>;
   createSession(session: Session): Promise<void>;
   findSession(tokenHash: string): Promise<Session | undefined>;
@@ -170,24 +172,33 @@ export class IdentityService {
     private readonly sessionTtlMs = 8 * 60 * 60 * 1000,
   ) {}
 
-  public async register(
-    input: RegisterInput,
-  ): Promise<{ user: User; tenant: Tenant; token: string; context: TenantContext }> {
+  public async register(input: RegisterInput): Promise<{
+    user: User;
+    tenant: Tenant;
+    tenantCreated: boolean;
+    token: string;
+    context: TenantContext;
+  }> {
     const email = normalizeEmail(input.email);
+    const tenantSlug = input.tenantSlug?.trim().toLowerCase() || "workshop-erp";
     if (
       !email.includes("@") ||
       input.password.length < 12 ||
       input.name.trim().length < 2 ||
-      input.tenantSlug.trim().length < 3
+      tenantSlug.length < 3
     ) {
       throw new ValidationError("Invalid registration data");
+    }
+    if ((await this.store.countUsers()) >= 3) {
+      throw new DomainError(
+        "USER_LIMIT_REACHED",
+        "Límite alcanzado: el sistema solo permite un máximo de 3 usuarios administradores.",
+      );
     }
     if (await this.store.findUserByEmail(email)) {
       throw new ConflictError("Email already registered");
     }
-    if (await this.store.findTenantBySlug(input.tenantSlug)) {
-      throw new ConflictError("Tenant slug already registered");
-    }
+    const existingTenant = await this.store.findTenantBySlug(tenantSlug);
 
     const now = new Date();
     const user: User = {
@@ -198,10 +209,10 @@ export class IdentityService {
       createdAt: now,
       updatedAt: now,
     };
-    const tenant: Tenant = {
+    const tenant: Tenant = existingTenant ?? {
       id: randomUUID() as TenantId,
-      name: input.tenantName.trim(),
-      slug: input.tenantSlug.trim().toLowerCase(),
+      name: input.tenantName?.trim() || "Workshop ERP",
+      slug: tenantSlug,
       status: "active",
       createdAt: now,
     };
@@ -222,11 +233,11 @@ export class IdentityService {
       createdAt: now,
       updatedAt: now,
     });
-    await this.store.createTenant(tenant);
+    if (!existingTenant) await this.store.createTenant(tenant);
     await this.store.addMembership(membership);
     const session = await this.createSession(user.id);
     const context = this.contextFromMembership(membership);
-    return { user, tenant, token: session.token, context };
+    return { user, tenant, tenantCreated: !existingTenant, token: session.token, context };
   }
 
   public async login(
@@ -428,6 +439,9 @@ export class InMemoryIdentityStore implements IdentityStore {
       (item) => item.userId === userId && item.tenantId === tenantId,
     );
   }
+  public async countUsers(): Promise<number> {
+    return this.users.size;
+  }
   public async listMemberships(userId: UserId): Promise<TenantMembership[]> {
     return [...this.memberships.values()].filter((item) => item.userId === userId);
   }
@@ -524,6 +538,9 @@ export class MongoIdentityStore implements IdentityStore {
       "memberships",
     ).findOne({ userId, tenantId });
     return doc ? this.withoutId(doc) : undefined;
+  }
+  public async countUsers(): Promise<number> {
+    return this.collection<User & MongoIdentityDocument>("users").countDocuments();
   }
   public async listMemberships(userId: UserId): Promise<TenantMembership[]> {
     return (
