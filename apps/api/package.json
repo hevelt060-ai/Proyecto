@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "build": "tsc -b"
   },
   "dependencies": {
     "@erp/config": "file:../../packages/config",

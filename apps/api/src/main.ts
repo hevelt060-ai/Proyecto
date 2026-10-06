@@ -25,6 +25,9 @@ import {
   type TenantContext,
 } from "@erp/identity";
 import { InMemoryOrganizationStore, OrganizationService } from "@erp/organization";
+import { sseEmitter } from "./sse.js";
+import { createServicesRouter } from "./modules/services/services.routes.js";
+import { createReportsRouter } from "./modules/reports/reports.routes.js";
 
 dns.setDefaultResultOrder("ipv4first");
 
@@ -887,6 +890,26 @@ export const createApp = (dependencies: ApiDependencies = {}) => {
       }
     },
   );
+
+  // Mount services and reports endpoints
+  app.use(`${config.apiPrefix}/services`, createServicesRouter(authenticated));
+  app.use(`${config.apiPrefix}/reports`, createReportsRouter(authenticated));
+
+  // SSE Sync Endpoint
+  app.get(`${config.apiPrefix}/sync`, authenticated, (request, response) => {
+    try {
+      const context = requirePermission(request);
+      response.setHeader("Content-Type", "text/event-stream");
+      response.setHeader("Cache-Control", "no-cache");
+      response.setHeader("Connection", "keep-alive");
+      response.flushHeaders();
+
+      const clientId = randomUUID();
+      sseEmitter.addClient(clientId, context.tenantId, response);
+    } catch (err) {
+      response.status(401).end();
+    }
+  });
 
   // Manejo de Excepciones y Rutas no Encontradas
   app.use((error: unknown, request: Request, response: Response, _next: NextFunction) => {
