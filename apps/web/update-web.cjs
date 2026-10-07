@@ -1,17 +1,19 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
-const API_FILE = path.join(__dirname, 'src/services/api.ts');
-const TYPES_FILE = path.join(__dirname, 'src/components/dashboard/types.ts');
-const APP_FILE = path.join(__dirname, 'src/App.tsx');
-const DASHBOARD_FILE = path.join(__dirname, 'src/components/dashboard/DashboardPage.tsx');
-const DETAIL_MODAL_FILE = path.join(__dirname, 'src/components/dashboard/ServiceDetailModal.tsx');
-const NEW_MODAL_FILE = path.join(__dirname, 'src/components/dashboard/NewServiceModal.tsx');
-const PENDING_CARD_FILE = path.join(__dirname, 'src/components/dashboard/PendingServicesCard.tsx');
+const API_FILE = path.join(__dirname, "src/services/api.ts");
+const TYPES_FILE = path.join(__dirname, "src/components/dashboard/types.ts");
+const APP_FILE = path.join(__dirname, "src/App.tsx");
+const DASHBOARD_FILE = path.join(__dirname, "src/components/dashboard/DashboardPage.tsx");
+const DETAIL_MODAL_FILE = path.join(__dirname, "src/components/dashboard/ServiceDetailModal.tsx");
+const NEW_MODAL_FILE = path.join(__dirname, "src/components/dashboard/NewServiceModal.tsx");
+const PENDING_CARD_FILE = path.join(__dirname, "src/components/dashboard/PendingServicesCard.tsx");
 
 // 1. types.ts
-let typesContent = fs.readFileSync(TYPES_FILE, 'utf-8');
-typesContent = typesContent.replace(/export interface BikeService {[\s\S]*?}/, `export interface BikeService {
+let typesContent = fs.readFileSync(TYPES_FILE, "utf-8");
+typesContent = typesContent.replace(
+  /export interface BikeService {[\s\S]*?}/,
+  `export interface BikeService {
   id: string;
   folio?: string;
   customerName: string;
@@ -29,15 +31,16 @@ typesContent = typesContent.replace(/export interface BikeService {[\s\S]*?}/, `
   completedAt?: string | undefined;
   laborCost?: number;
   totalCost?: number;
-}`);
+}`,
+);
 fs.writeFileSync(TYPES_FILE, typesContent);
 
 // 2. ServiceDetailModal.tsx - Add Edit/Delete buttons
-let detailModal = fs.readFileSync(DETAIL_MODAL_FILE, 'utf-8');
+let detailModal = fs.readFileSync(DETAIL_MODAL_FILE, "utf-8");
 // Assuming it has a footer or something where we can add buttons
 detailModal = detailModal.replace(
   /export function ServiceDetailModal\(\{[\s\S]*?return \(/,
-  (match) => match.replace('onStatusChange,', 'onStatusChange, onEdit, onDelete,')
+  (match) => match.replace("onStatusChange,", "onStatusChange, onEdit, onDelete,"),
 );
 detailModal = detailModal.replace(
   /interface ServiceDetailModalProps {[\s\S]*?}/,
@@ -47,7 +50,7 @@ detailModal = detailModal.replace(
   onStatusChange: (service: BikeService, status: BikeServiceStatus) => void;
   onEdit?: (service: BikeService) => void;
   onDelete?: (service: BikeService) => void;
-}`
+}`,
 );
 detailModal = detailModal.replace(
   /<footer className="modal-footer">[\s\S]*?<\/footer>/g,
@@ -58,15 +61,17 @@ detailModal = detailModal.replace(
           <button className="button-secondary" onClick={onClose}>
             Cerrar
           </button>
-        </footer>`
+        </footer>`,
 );
 fs.writeFileSync(DETAIL_MODAL_FILE, detailModal);
 
 // We need a Reports component, but it says we can just put it in Dashboard. Let's add it to DashboardPage.tsx.
-let dashboard = fs.readFileSync(DASHBOARD_FILE, 'utf-8');
-dashboard = dashboard.replace('import { WorkshopCalendar } from "./WorkshopCalendar";', 
-`import { WorkshopCalendar } from "./WorkshopCalendar";
-import { api } from "../../services/api";`);
+let dashboard = fs.readFileSync(DASHBOARD_FILE, "utf-8");
+dashboard = dashboard.replace(
+  'import { WorkshopCalendar } from "./WorkshopCalendar";',
+  `import { WorkshopCalendar } from "./WorkshopCalendar";
+import { api } from "../../services/api";`,
+);
 
 // DashboardPage Props update
 dashboard = dashboard.replace(
@@ -81,7 +86,7 @@ dashboard = dashboard.replace(
   onUpdateWorkOrder: (id: string, status: any) => Promise<void>;
   onDeleteService?: (id: string) => Promise<void>;
   onEditService?: (id: string, payload: any) => Promise<void>;
-}`
+}`,
 );
 
 // fromWorkOrder mapper update to support new payload
@@ -122,7 +127,7 @@ dashboard = dashboard.replace(
     laborCost: order.laborCost || 0,
     totalCost: order.totalCost || 0,
   };
-};`
+};`,
 );
 
 // Inside DashboardPage function
@@ -144,7 +149,7 @@ dashboard = dashboard.replace(
   useEffect(() => {
     api.getReportsSummary().then(res => setReportsSummary(res.data)).catch(() => {});
   }, [orders]);
-`
+`,
 );
 
 // Expose Delete & Edit functionality
@@ -172,7 +177,7 @@ dashboard = dashboard.replace(
               });
             }
           }}
-        />`
+        />`,
 );
 
 // Reports section
@@ -211,18 +216,21 @@ dashboard = dashboard.replace(
           </article>
         </section>
       )}
-    </main>`
+    </main>`,
 );
 
 // Need to import useEffect
-if (!dashboard.includes('useEffect')) {
-  dashboard = dashboard.replace('import { useState } from "react";', 'import { useState, useEffect } from "react";');
+if (!dashboard.includes("useEffect")) {
+  dashboard = dashboard.replace(
+    'import { useState } from "react";',
+    'import { useState, useEffect } from "react";',
+  );
 }
 
 fs.writeFileSync(DASHBOARD_FILE, dashboard);
 
 // 4. App.tsx - SSE Integration & Delete/Edit handling
-let app = fs.readFileSync(APP_FILE, 'utf-8');
+let app = fs.readFileSync(APP_FILE, "utf-8");
 
 app = app.replace(
   /const loadData = async \(\) => {[\s\S]*?finally {[\s\S]*?}/,
@@ -242,7 +250,7 @@ app = app.replace(
     } finally {
       setLoading(false);
     }
-  };`
+  };`,
 );
 
 app = app.replace(
@@ -267,7 +275,7 @@ app = app.replace(
         window.removeEventListener("focus", loadData);
       };
     }
-  }, [token]);`
+  }, [token]);`,
 );
 
 app = app.replace(
@@ -288,7 +296,7 @@ app = app.replace(
         await api.updateService(id, payload);
         await loadData();
       }}
-    />`
+    />`,
 );
 
 fs.writeFileSync(APP_FILE, app);

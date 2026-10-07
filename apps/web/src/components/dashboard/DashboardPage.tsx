@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-import type { WorkOrder, WorkOrderStatus } from "../../services/api";
+import type { ServiceRecord } from "../../services/api";
 import type { BikeService, BikeServiceStatus, NewBikeServiceData } from "./types";
 import { toLocalDateKey } from "./types";
 import { DashboardHeader } from "./DashboardHeader";
@@ -13,149 +13,92 @@ import { api } from "../../services/api";
 
 interface DashboardPageProps {
   userName: string;
-  orders: any[];
   loading: boolean;
   error: string;
   onLogout: () => void;
-  onRefresh: () => void;
-  onUpdateWorkOrder: (id: string, status: any) => Promise<void>;
+  onUpdateServiceStatus: (id: string, status: BikeServiceStatus) => Promise<void>;
   onDeleteService?: (id: string) => Promise<void>;
   onEditService?: (id: string, payload: any) => Promise<void>;
 }
 
-const getServiceStatus = (status: WorkOrderStatus): BikeServiceStatus => {
-  switch (status) {
-    case "WAITING_PARTS":
-      return "WAITING_PARTS";
-    case "IN_PROGRESS":
-    case "QUALITY_CHECK":
-      return "IN_PROGRESS";
-    case "READY_FOR_DELIVERY":
-      return "READY_FOR_DELIVERY";
-    case "DELIVERED":
-      return "COMPLETED";
-    case "CANCELLED":
-      return "CANCELLED";
-    default:
-      return "PENDING";
-  }
-};
-
-const fromWorkOrder = (order: WorkOrder): BikeService => {
-  const bikeBrand = order.equipmentSnapshot?.brand || "Bicicleta";
-  const bikeModel = order.equipmentSnapshot?.model || "Modelo pendiente";
-  const serviceType = order.parts?.length ? "Servicio y repuestos" : "Servicio de taller";
-  const workItems = [
-    serviceType,
-    ...(order.intakeChecklist?.damagesReported ?? []),
-    ...(order.parts ?? []).map((part) => `${part.name} (${part.quantity})`),
-  ];
+const fromServiceRecord = (record: ServiceRecord): BikeService => {
+  const status = record.status.toLowerCase();
+  const serviceStatus: BikeServiceStatus =
+    status === "in_progress" ||
+    status === "waiting_parts" ||
+    status === "ready_for_delivery" ||
+    status === "completed" ||
+    status === "cancelled"
+      ? (status.toUpperCase() as BikeServiceStatus)
+      : "PENDING";
 
   return {
-    id: order.id,
-    folio: order.folio,
-    customerName: order.customerId || "Cliente sin registro",
-    contact: "",
-    bikeBrand,
-    bikeModel,
-    serviceType,
-    workItems,
-    deliveryDate: order.deliveryDate ?? "",
-    notes: "",
-    status: getServiceStatus(order.status),
+    id: record.id,
+    folio: record.folio ?? record.id.slice(0, 8).toUpperCase(),
+    customerName: record.clientName,
+    contact: record.clientPhone,
+    bikeBrand: "Bicicleta",
+    bikeModel: record.bikeModel,
+    serviceType: record.serviceType,
+    workItems: [record.serviceType, ...(record.notes.trim() ? [record.notes.trim()] : [])],
+    deliveryDate: record.deliveryDate,
+    notes: record.notes,
+    status: serviceStatus,
     source: "api",
-    workOrderStatus: order.status,
-    createdAt: order.createdAt,
-    ...(order.status === "DELIVERED" && order.updatedAt ? { completedAt: order.updatedAt } : {}),
+    createdAt: record.createdAt,
+    ...(serviceStatus === "COMPLETED" && record.updatedAt ? { completedAt: record.updatedAt } : {}),
   };
-};
-
-const serviceToWorkOrderStatus = (status: BikeServiceStatus): WorkOrderStatus | null => {
-  switch (status) {
-    case "PENDING":
-      return "IN_DIAGNOSIS";
-    case "IN_PROGRESS":
-      return "IN_PROGRESS";
-    case "WAITING_PARTS":
-      return "WAITING_PARTS";
-    case "READY_FOR_DELIVERY":
-      return "READY_FOR_DELIVERY";
-    case "COMPLETED":
-      return "DELIVERED";
-    default:
-      return null;
-  }
-};
-
-const statusRank: Record<BikeServiceStatus, number> = {
-  PENDING: 0,
-  IN_PROGRESS: 1,
-  WAITING_PARTS: 1,
-  READY_FOR_DELIVERY: 2,
-  COMPLETED: 3,
-  CANCELLED: 3,
-};
-
-const ALLOWED_WORK_ORDER_TRANSITIONS: Record<WorkOrderStatus, readonly WorkOrderStatus[]> = {
-  RECEIVED: ["IN_DIAGNOSIS", "CANCELLED"],
-  IN_DIAGNOSIS: ["WAITING_PARTS", "IN_PROGRESS", "CANCELLED"],
-  WAITING_PARTS: ["IN_PROGRESS", "CANCELLED"],
-  IN_PROGRESS: ["QUALITY_CHECK", "WAITING_PARTS", "CANCELLED"],
-  QUALITY_CHECK: ["READY_FOR_DELIVERY", "IN_PROGRESS"],
-  READY_FOR_DELIVERY: ["DELIVERED"],
-  DELIVERED: [],
-  CANCELLED: [],
-};
-
-const findWorkOrderStatusPath = (
-  currentStatus: WorkOrderStatus,
-  targetStatus: WorkOrderStatus,
-): WorkOrderStatus[] | null => {
-  const queue: { status: WorkOrderStatus; path: WorkOrderStatus[] }[] = [
-    { status: currentStatus, path: [] },
-  ];
-  const visited = new Set<WorkOrderStatus>([currentStatus]);
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) continue;
-    for (const nextStatus of ALLOWED_WORK_ORDER_TRANSITIONS[current.status]) {
-      if (visited.has(nextStatus)) continue;
-      const path = [...current.path, nextStatus];
-      if (nextStatus === targetStatus) return path;
-      visited.add(nextStatus);
-      queue.push({ status: nextStatus, path });
-    }
-  }
-
-  return null;
 };
 
 export function DashboardPage({
   userName,
-  orders,
   loading,
   error,
   onLogout,
-  onRefresh,
-  onUpdateWorkOrder,
+  onUpdateServiceStatus,
   onDeleteService,
   onEditService,
 }: DashboardPageProps) {
   const [reportsSummary, setReportsSummary] = useState<any>(null);
   const [savedReports, setSavedReports] = useState<any[]>([]);
-  
-  useEffect(() => {
-    api.getReportsSummary().then(res => setReportsSummary(res.data)).catch(() => {});
-    api.getSavedReports().then(res => setSavedReports(res)).catch(() => {});
-  }, [orders]);
 
-  const [localServices, setLocalServices] = useState<BikeService[]>([]);
+  useEffect(() => {
+    api
+      .getReportsSummary()
+      .then((res) => setReportsSummary(res.data))
+      .catch(() => {});
+    api
+      .getSavedReports()
+      .then((res) => setSavedReports(res))
+      .catch(() => {});
+  }, []);
+
+  const [services, setServices] = useState<BikeService[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [servicesError, setServicesError] = useState("");
   const [isNewServiceOpen, setIsNewServiceOpen] = useState(false);
   const [serviceToEdit, setServiceToEdit] = useState<BikeService | null>(null);
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[] | null>(null);
-  const remoteServices = orders.map(fromWorkOrder);
-  const services = [...remoteServices, ...localServices];
+
+  const loadServices = async () => {
+    setServicesLoading(true);
+    setServicesError("");
+    try {
+      const records = await api.getServices();
+      setServices(records.map(fromServiceRecord));
+    } catch (loadError) {
+      setServicesError(
+        loadError instanceof Error ? loadError.message : "No se pudieron cargar los servicios",
+      );
+    } finally {
+      setServicesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadServices();
+  }, []);
+
   const selectedServices = selectedServiceIds
     ? services.filter((service) => selectedServiceIds.includes(service.id))
     : [];
@@ -173,38 +116,26 @@ export function DashboardPage({
     );
   }).length;
 
-  const createService = (data: NewBikeServiceData) => {
-    const createdAt = new Date().toISOString();
-    const service: BikeService = {
-      ...data,
-      id: `local-${crypto.randomUUID()}`,
-      folio: `WEB-${String(localServices.length + 1).padStart(4, "0")}`,
-      workItems: [data.serviceType, ...(data.notes.trim() ? [data.notes.trim()] : [])],
-      status: "PENDING",
-      source: "local",
-      createdAt,
-    };
-    setLocalServices((current) => [service, ...current]);
+  const createService = async (data: NewBikeServiceData) => {
+    const created = await api.createService({
+      clientName: data.customerName,
+      clientPhone: data.contact,
+      bikeModel: [data.bikeBrand, data.bikeModel].filter(Boolean).join(" "),
+      serviceType: data.serviceType,
+      deliveryDate: data.deliveryDate,
+      notes: data.notes || "",
+      status: "pending",
+    });
+    setServices((current) => [fromServiceRecord(created), ...current]);
     setIsNewServiceOpen(false);
   };
 
   const updateServiceStatus = async (service: BikeService, status: BikeServiceStatus) => {
     if (service.status === status) return;
-    if (service.source === "local") {
-      setLocalServices((current) =>
-        current.map((item) => (item.id === service.id ? { ...item, status } : item)),
-      );
-      return;
-    }
-
-    const targetStatus = serviceToWorkOrderStatus(status);
-    if (!targetStatus || !service.workOrderStatus) return;
-    if (statusRank[status] < statusRank[service.status]) return;
-    const path = findWorkOrderStatusPath(service.workOrderStatus, targetStatus);
-    if (!path) return;
-    for (const nextStatus of path) {
-      await onUpdateWorkOrder(service.id, nextStatus);
-    }
+    await onUpdateServiceStatus(service.id, status);
+    setServices((current) =>
+      current.map((item) => (item.id === service.id ? { ...item, status } : item)),
+    );
   };
 
   return (
@@ -220,7 +151,12 @@ export function DashboardPage({
           <p className="dashboard-section-label">RESUMEN DEL TALLER</p>
           <h1>Operación diaria</h1>
         </div>
-        <button className="refresh-button" type="button" onClick={onRefresh} disabled={loading}>
+        <button
+          className="refresh-button"
+          type="button"
+          onClick={() => void loadServices()}
+          disabled={loading || servicesLoading}
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M20 7v5h-5M4 17v-5h5" />
             <path d="M5.6 9a7 7 0 0 1 11.9-2L20 12M4 12l2.5 5a7 7 0 0 0 11.9-2" />
@@ -234,6 +170,12 @@ export function DashboardPage({
           {error}
         </p>
       )}
+      {servicesError && (
+        <p className="dashboard-error" role="alert">
+          {servicesError}
+        </p>
+      )}
+      {servicesLoading && <p role="status">Cargando servicios...</p>}
 
       <section className="kpi-strip" aria-label="Indicadores del taller">
         <article className="kpi-item">
@@ -296,7 +238,10 @@ export function DashboardPage({
         <EditServiceModal
           service={serviceToEdit}
           onClose={() => setServiceToEdit(null)}
-          onSave={onEditService}
+          onSave={async (id, payload) => {
+            await onEditService(id, payload);
+            await loadServices();
+          }}
         />
       )}
       {selectedServiceIds && selectedServices.length > 0 && (
@@ -304,13 +249,30 @@ export function DashboardPage({
           services={selectedServices}
           onClose={() => setSelectedServiceIds(null)}
           onStatusChange={(service, status) => {
-            void updateServiceStatus(service, status).catch(() => undefined);
+            void updateServiceStatus(service, status).catch((statusError) => {
+              setServicesError(
+                statusError instanceof Error
+                  ? statusError.message
+                  : "No se pudo actualizar el estado",
+              );
+            });
           }}
           onDelete={(service) => {
             if (window.confirm("¿Seguro que deseas eliminar este servicio?")) {
-               if (onDeleteService) onDeleteService(service.id).then(() => {
-                 setSelectedServiceIds(null);
-               });
+              if (onDeleteService) {
+                onDeleteService(service.id)
+                  .then(() => {
+                    setServices((current) => current.filter((item) => item.id !== service.id));
+                    setSelectedServiceIds(null);
+                  })
+                  .catch((deleteError) => {
+                    setServicesError(
+                      deleteError instanceof Error
+                        ? deleteError.message
+                        : "No se pudo eliminar el servicio",
+                    );
+                  });
+              }
             }
           }}
           onEdit={(service) => {
@@ -319,23 +281,32 @@ export function DashboardPage({
           }}
         />
       )}
-    
-      <section className="dashboard-subhead" style={{marginTop: '2rem'}}>
+
+      <section className="dashboard-subhead" style={{ marginTop: "2rem" }}>
         <div>
           <p className="dashboard-section-label">REPORTES</p>
           <h1>Resumen Financiero y Estadísticas</h1>
         </div>
-        <button className="button-secondary" onClick={() => window.open(api.getReportsExportUrl(), '_blank')}>
+        <button
+          className="button-secondary"
+          onClick={() => window.open(api.getReportsExportUrl(), "_blank")}
+        >
           Exportar a CSV
         </button>
-        <button 
-          className="button-primary" 
-          style={{marginLeft: '1rem'}} 
+        <button
+          className="button-primary"
+          style={{ marginLeft: "1rem" }}
           onClick={async () => {
-            const title = prompt("Nombre del reporte:", `Reporte ${new Date().toLocaleDateString()}`);
+            const title = prompt(
+              "Nombre del reporte:",
+              `Reporte ${new Date().toLocaleDateString()}`,
+            );
             if (title && reportsSummary) {
               await api.saveReport(title, reportsSummary);
-              api.getSavedReports().then(res => setSavedReports(res)).catch(() => {});
+              api
+                .getSavedReports()
+                .then((res) => setSavedReports(res))
+                .catch(() => {});
             }
           }}
         >
@@ -365,30 +336,34 @@ export function DashboardPage({
           </article>
         </section>
       )}
-    
+
       {savedReports.length > 0 && (
-        <section className="dashboard-subhead" style={{marginTop: '2rem'}}>
+        <section className="dashboard-subhead" style={{ marginTop: "2rem" }}>
           <div>
             <p className="dashboard-section-label">HISTORIAL</p>
             <h1>Reportes Guardados</h1>
           </div>
-          <div style={{width: '100%', marginTop: '1rem'}}>
-            <table style={{width: '100%', textAlign: 'left', borderCollapse: 'collapse'}}>
+          <div style={{ width: "100%", marginTop: "1rem" }}>
+            <table style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
               <thead>
-                <tr style={{borderBottom: '1px solid #E2E8F0'}}>
-                  <th style={{padding: '0.5rem'}}>Título</th>
-                  <th style={{padding: '0.5rem'}}>Fecha</th>
-                  <th style={{padding: '0.5rem'}}>Ingresos</th>
-                  <th style={{padding: '0.5rem'}}>Concluidos</th>
+                <tr style={{ borderBottom: "1px solid #E2E8F0" }}>
+                  <th style={{ padding: "0.5rem" }}>Título</th>
+                  <th style={{ padding: "0.5rem" }}>Fecha</th>
+                  <th style={{ padding: "0.5rem" }}>Ingresos</th>
+                  <th style={{ padding: "0.5rem" }}>Concluidos</th>
                 </tr>
               </thead>
               <tbody>
                 {savedReports.map((report) => (
-                  <tr key={report.id} style={{borderBottom: '1px solid #F1F5F9'}}>
-                    <td style={{padding: '0.5rem'}}>{report.title}</td>
-                    <td style={{padding: '0.5rem'}}>{new Date(report.createdAt).toLocaleDateString()}</td>
-                    <td style={{padding: '0.5rem'}}>${report.data?.totalRevenue || 0}</td>
-                    <td style={{padding: '0.5rem'}}>{report.data?.totalServices?.delivered || 0}</td>
+                  <tr key={report.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "0.5rem" }}>{report.title}</td>
+                    <td style={{ padding: "0.5rem" }}>
+                      {new Date(report.createdAt).toLocaleDateString()}
+                    </td>
+                    <td style={{ padding: "0.5rem" }}>${report.data?.totalRevenue || 0}</td>
+                    <td style={{ padding: "0.5rem" }}>
+                      {report.data?.totalServices?.delivered || 0}
+                    </td>
                   </tr>
                 ))}
               </tbody>

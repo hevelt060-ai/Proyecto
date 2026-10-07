@@ -30,6 +30,20 @@ export interface WorkOrder {
   intakeChecklist?: { damagesReported: string[] };
 }
 
+export interface ServiceRecord {
+  id: string;
+  folio?: string;
+  clientName: string;
+  clientPhone: string;
+  bikeModel: string;
+  serviceType: string;
+  deliveryDate: string;
+  notes: string;
+  status: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface AuthenticatedUser {
   id: string;
   name: string;
@@ -133,15 +147,75 @@ class ApiClient {
 
   // --- NEW SERVICES AND REPORTS API ---
 
-  public getServices(): Promise<any[]> {
-    // Some routes return data directly, some wrap in { success: true, data: ... }
-    // Services GET from our new endpoint returns direct array or wrapped?
-    // In our new API it returns an array directly because we didn't wrap it.
-    // However, this.request assumes `{ success: true, data }`.
-    // Wait, let's fix request to handle direct array if `success` is missing.
-    return fetch(`${API_BASE_URL}/services`, {
-      headers: { Authorization: `Bearer ${this.token}` }
-    }).then(res => res.json());
+  public async getServices(): Promise<ServiceRecord[]> {
+    const response = await fetch(`${API_BASE_URL}/services`, {
+      headers: this.getServiceHeaders(),
+    });
+    const payload: unknown = await response.json();
+    if (!response.ok) {
+      throw new Error(this.getServiceError(payload, response.status));
+    }
+
+    const services = Array.isArray(payload)
+      ? payload
+      : typeof payload === "object" && payload !== null && "data" in payload
+        ? payload.data
+        : null;
+    if (!Array.isArray(services)) {
+      throw new Error("La respuesta del servidor no contiene una lista de servicios");
+    }
+    return services as ServiceRecord[];
+  }
+
+  public async createService(payload: {
+    clientName: string;
+    clientPhone: string;
+    bikeModel: string;
+    serviceType: string;
+    deliveryDate: string;
+    notes: string;
+    status: "pending";
+  }): Promise<ServiceRecord> {
+    const response = await fetch(`${API_BASE_URL}/services`, {
+      method: "POST",
+      headers: this.getServiceHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const result: unknown = await response.json();
+    if (!response.ok) {
+      throw new Error(this.getServiceError(result, response.status));
+    }
+    return result as ServiceRecord;
+  }
+
+  public async updateServiceStatus(id: string, status: string): Promise<ServiceRecord> {
+    const response = await fetch(`${API_BASE_URL}/services/${id}/status`, {
+      method: "PATCH",
+      headers: this.getServiceHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    const result: unknown = await response.json();
+    if (!response.ok) {
+      throw new Error(this.getServiceError(result, response.status));
+    }
+    return result as ServiceRecord;
+  }
+
+  private getServiceHeaders(): Record<string, string> {
+    return {
+      "Content-Type": "application/json",
+      ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+    };
+  }
+
+  private getServiceError(payload: unknown, status: number): string {
+    if (typeof payload === "object" && payload !== null && "error" in payload) {
+      const error = payload.error;
+      if (typeof error === "object" && error !== null && "message" in error) {
+        return String(error.message);
+      }
+    }
+    return `HTTP Error ${status}`;
   }
 
   public updateService(id: string, payload: any): Promise<any> {
@@ -149,17 +223,17 @@ class ApiClient {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.token}`
+        Authorization: `Bearer ${this.token}`,
       },
-      body: JSON.stringify(payload)
-    }).then(res => res.json());
+      body: JSON.stringify(payload),
+    }).then((res) => res.json());
   }
 
   public deleteService(id: string): Promise<any> {
     return fetch(`${API_BASE_URL}/services/${id}`, {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${this.token}` }
-    }).then(res => res.json());
+      headers: { Authorization: `Bearer ${this.token}` },
+    }).then((res) => res.json());
   }
 
   public getReportsSummary(startDate?: string, endDate?: string): Promise<any> {
@@ -173,7 +247,7 @@ class ApiClient {
   public saveReport(title: string, data?: any): Promise<any> {
     return this.request<any>("/reports", {
       method: "POST",
-      body: JSON.stringify({ title, data })
+      body: JSON.stringify({ title, data }),
     });
   }
 

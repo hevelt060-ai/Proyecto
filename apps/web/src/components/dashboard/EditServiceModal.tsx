@@ -81,11 +81,7 @@ export function EditServiceModal({ service, onClose, onSave }: EditServiceModalP
           </label>
           <label>
             Teléfono o correo
-            <input
-              value={contact}
-              onChange={(event) => setContact(event.target.value)}
-              required
-            />
+            <input value={contact} onChange={(event) => setContact(event.target.value)} required />
           </label>
           <div className="form-field-row">
             <label>
@@ -143,11 +139,7 @@ export function EditServiceModal({ service, onClose, onSave }: EditServiceModalP
           </label>
           <label>
             Notas técnicas
-            <textarea
-              rows={3}
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
+            <textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
           </label>
           <div className="modal-actions">
             <button className="button-secondary" type="button" onClick={onClose}>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, type AuthenticatedUser, type WorkOrder, type WorkOrderStatus } from "./services/api";
+import { api, type AuthenticatedUser } from "./services/api";
 import { DashboardPage } from "./components/dashboard/DashboardPage";
 import "./components/dashboard/dashboard.css";
 
@@ -11,7 +11,6 @@ export function App() {
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [showPassword, setShowPassword] = useState(false);
   const authSubmitting = useRef(false);
-  const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -36,11 +35,7 @@ export function App() {
     setLoading(true);
     setError("");
     try {
-      const [fetchedOrders, profile] = await Promise.all([
-        api.getServices(),
-        api.getCurrentUser(),
-      ]);
-      setOrders(fetchedOrders);
+      const profile = await api.getCurrentUser();
       setCurrentUser(profile.user);
     } catch (err: any) {
       setError(err.message || "Error al sincronizar con el servidor");
@@ -52,20 +47,9 @@ export function App() {
   useEffect(() => {
     if (token) {
       loadData();
-      
-      const evtSource = new EventSource('https://erp-api-backend.onrender.com/api/v1/sync');
-      evtSource.onmessage = (event) => {
-        // Just log or trigger refresh if necessary
-        console.log("SSE update:", event.data);
-      };
-      const interval = setInterval(() => {
-         api.getServices().then(setOrders).catch(() => {});
-      }, 10000);
-      
+
       window.addEventListener("focus", loadData);
-      
       return () => {
-        clearInterval(interval);
         window.removeEventListener("focus", loadData);
       };
     }
@@ -97,11 +81,10 @@ export function App() {
     }
   };
 
-  const handleWorkOrderStatusChange = async (orderId: string, nextStatus: WorkOrderStatus) => {
+  const handleServiceStatusChange = async (serviceId: string, nextStatus: string) => {
     setError("");
     try {
-      await api.transitionStatus(orderId, nextStatus, "Actualizado desde panel web");
-      await loadData();
+      await api.updateServiceStatus(serviceId, nextStatus);
     } catch (err: any) {
       setError(err.message || "No se pudo actualizar el estado del servicio");
       throw err;
@@ -239,15 +222,12 @@ export function App() {
   return (
     <DashboardPage
       userName={currentUser?.name ?? "Equipo del taller"}
-      orders={orders}
       loading={loading}
       error={error}
       onLogout={logout}
-      onRefresh={loadData}
-      onUpdateWorkOrder={handleWorkOrderStatusChange}
+      onUpdateServiceStatus={handleServiceStatusChange}
       onDeleteService={async (id) => {
         await api.deleteService(id);
-        setOrders(curr => curr.filter(o => o.id !== id));
       }}
       onEditService={async (id, payload) => {
         await api.updateService(id, payload);

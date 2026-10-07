@@ -4,7 +4,7 @@ import type { NewBikeServiceData } from "./types";
 
 interface NewServiceModalProps {
   onClose: () => void;
-  onCreate: (service: NewBikeServiceData) => void;
+  onCreate: (service: NewBikeServiceData) => Promise<void>;
 }
 
 const SERVICE_TYPES = [
@@ -23,10 +23,29 @@ export function NewServiceModal({ onClose, onCreate }: NewServiceModalProps) {
   const [serviceType, setServiceType] = useState(SERVICE_TYPES[0] ?? "");
   const [deliveryDate, setDeliveryDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    onCreate({ customerName, contact, bikeBrand, bikeModel, serviceType, deliveryDate, notes });
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setSubmitError("");
+    try {
+      await onCreate({
+        customerName,
+        contact,
+        bikeBrand,
+        bikeModel,
+        serviceType,
+        deliveryDate,
+        notes,
+      });
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "No se pudo crear el servicio");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -122,12 +141,22 @@ export function NewServiceModal({ onClose, onCreate }: NewServiceModalProps) {
               placeholder="Hallazgos, piezas o indicaciones para el taller"
             />
           </label>
+          {submitError && (
+            <p className="dashboard-error" role="alert">
+              {submitError}
+            </p>
+          )}
           <div className="modal-actions">
-            <button className="button-secondary" type="button" onClick={onClose}>
+            <button
+              className="button-secondary"
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+            >
               Cancelar
             </button>
-            <button className="button-primary" type="submit">
-              Crear servicio
+            <button className="button-primary" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Guardando..." : "Crear servicio"}
             </button>
           </div>
         </form>
