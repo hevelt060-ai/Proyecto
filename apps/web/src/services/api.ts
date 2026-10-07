@@ -42,6 +42,33 @@ export interface ServiceRecord {
   status: string;
   createdAt: string;
   updatedAt?: string;
+  laborCost?: number;
+  totalCost?: number;
+  paymentStatus?: string;
+}
+
+export interface CreateReportPayload {
+  title: string;
+  periodStart: string;
+  periodEnd: string;
+  totalRevenue: number;
+  totalExpenses: number;
+  netBalance: number;
+  totalServicesCount: number;
+  breakdown: {
+    byStatus: Record<string, number>;
+    byType: Record<string, number>;
+  };
+}
+
+export interface SavedReport extends CreateReportPayload {
+  id: string;
+  tenantId: string;
+  createdAt: string;
+  data?: {
+    totalRevenue?: number;
+    totalServices?: { delivered?: number };
+  };
 }
 
 export interface AuthenticatedUser {
@@ -244,15 +271,42 @@ class ApiClient {
     return this.request<any>(`/reports/summary${query}`);
   }
 
-  public saveReport(title: string, data?: any): Promise<any> {
-    return this.request<any>("/reports", {
+  public saveReport(report: CreateReportPayload): Promise<SavedReport> {
+    return this.request<SavedReport>("/reports", {
       method: "POST",
-      body: JSON.stringify({ title, data }),
+      body: JSON.stringify(report),
     });
   }
 
-  public getSavedReports(): Promise<any[]> {
-    return this.request<any[]>("/reports");
+  public getSavedReports(): Promise<SavedReport[]> {
+    return this.request<SavedReport[]>("/reports");
+  }
+
+  public getExpenses(): Promise<any[]> {
+    return fetch(`${API_BASE_URL}/expenses`, {
+      headers: this.getServiceHeaders(),
+    }).then((res) => res.json());
+  }
+
+  public createExpense(payload: {
+    description: string;
+    amount: number;
+    date: string;
+    category?: string;
+    paymentMethod?: string;
+  }): Promise<any> {
+    return fetch(`${API_BASE_URL}/expenses`, {
+      method: "POST",
+      headers: this.getServiceHeaders(),
+      body: JSON.stringify(payload),
+    }).then((res) => res.json());
+  }
+
+  public deleteExpense(id: string): Promise<any> {
+    return fetch(`${API_BASE_URL}/expenses/${id}`, {
+      method: "DELETE",
+      headers: this.getServiceHeaders(),
+    }).then((res) => res.json());
   }
 
   public getReportsExportUrl(startDate?: string, endDate?: string): string {

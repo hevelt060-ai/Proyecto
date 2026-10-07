@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
+import { randomUUID } from "node:crypto";
 import { getDatabase } from "@erp/database";
 import type { TenantContext } from "@erp/identity";
 import { z } from "zod";
@@ -19,12 +20,24 @@ const querySchema = z.object({
   endDate: z.string().optional(),
 });
 
-import { randomUUID } from "node:crypto";
-
-const createReportSchema = z.object({
-  title: z.string().min(1),
-  data: z.any().optional(),
-});
+const createReportSchema = z
+  .object({
+    title: z.string().trim().min(1),
+    periodStart: z.iso.date(),
+    periodEnd: z.iso.date(),
+    totalRevenue: z.number().finite().nonnegative(),
+    totalExpenses: z.number().finite().nonnegative(),
+    netBalance: z.number().finite(),
+    totalServicesCount: z.number().int().nonnegative(),
+    breakdown: z.object({
+      byStatus: z.record(z.string(), z.number().int().nonnegative()),
+      byType: z.record(z.string(), z.number().int().nonnegative()),
+    }),
+  })
+  .refine((report) => report.periodStart <= report.periodEnd, {
+    message: "periodStart must be before or equal to periodEnd",
+    path: ["periodEnd"],
+  });
 
 export const createReportsRouter = (authenticated: any) => {
   const router = Router();
@@ -37,9 +50,8 @@ export const createReportsRouter = (authenticated: any) => {
       const report = {
         id: randomUUID(),
         tenantId: context.tenantId,
-        title: input.title,
-        data: input.data,
-        createdAt: new Date()
+        ...input,
+        createdAt: new Date(),
       };
       await db.collection("reports").insertOne(report);
       res.status(201).json({ success: true, data: report });

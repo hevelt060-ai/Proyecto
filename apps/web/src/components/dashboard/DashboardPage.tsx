@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-import type { ServiceRecord } from "../../services/api";
+import type { SavedReport, ServiceRecord } from "../../services/api";
 import type { BikeService, BikeServiceStatus, NewBikeServiceData } from "./types";
 import { toLocalDateKey } from "./types";
 import { DashboardHeader } from "./DashboardHeader";
@@ -46,9 +46,55 @@ const fromServiceRecord = (record: ServiceRecord): BikeService => {
     status: serviceStatus,
     source: "api",
     createdAt: record.createdAt,
+    laborCost: record.laborCost,
+    totalCost: record.totalCost,
+    paymentStatus: record.paymentStatus,
     ...(serviceStatus === "COMPLETED" && record.updatedAt ? { completedAt: record.updatedAt } : {}),
   };
 };
+
+export function exportServicesToCSV(services: BikeService[]) {
+  const headers = [
+    "Folio",
+    "Cliente",
+    "Teléfono",
+    "Bicicleta",
+    "Servicio",
+    "Costo",
+    "Estado",
+    "Estado Pago",
+    "Fecha Entrega",
+    "Fecha Registro",
+  ];
+  const escapeCsvValue = (value: string | number | undefined | null) =>
+    `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const rows = services.map((service) =>
+    [
+      service.folio || service.id,
+      service.customerName,
+      service.contact,
+      [service.bikeBrand, service.bikeModel].filter(Boolean).join(" "),
+      service.serviceType,
+      service.totalCost ?? service.laborCost ?? 0,
+      service.status,
+      service.paymentStatus || "pendiente",
+      service.deliveryDate,
+      service.createdAt,
+    ]
+      .map(escapeCsvValue)
+      .join(","),
+  );
+  const csvContent = [headers.map(escapeCsvValue).join(","), ...rows].join("\r\n");
+  const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", `reporte_taller_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 
 export function DashboardPage({
   userName,
@@ -60,17 +106,42 @@ export function DashboardPage({
   onEditService,
 }: DashboardPageProps) {
   const [reportsSummary, setReportsSummary] = useState<any>(null);
-  const [savedReports, setSavedReports] = useState<any[]>([]);
+  const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [isSavingReport, setIsSavingReport] = useState(false);
+  const [isReportSnapshotReady, setIsReportSnapshotReady] = useState(false);
+  const [reportMessage, setReportMessage] = useState("");
+  const [reportError, setReportError] = useState("");
 
   useEffect(() => {
-    api
-      .getReportsSummary()
-      .then((res) => setReportsSummary(res.data))
-      .catch(() => {});
-    api
-      .getSavedReports()
-      .then((res) => setSavedReports(res))
-      .catch(() => {});
+    const loadReportData = async () => {
+      const [summaryResult, reportsResult, expensesResult] = await Promise.allSettled([
+        api.getReportsSummary(),
+        api.getSavedReports(),
+        api.getExpenses(),
+      ]);
+
+      if (summaryResult.status === "fulfilled") {
+        setReportsSummary(summaryResult.value.data);
+      } else {
+        setReportError("No se pudieron cargar los ingresos del reporte");
+      }
+      if (reportsResult.status === "fulfilled") {
+        setSavedReports(reportsResult.value);
+      } else {
+        setReportError("No se pudo cargar el historial de reportes");
+      }
+      if (expensesResult.status === "fulfilled") {
+        setExpenses(Array.isArray(expensesResult.value) ? expensesResult.value : []);
+      } else {
+        setReportError("No se pudieron cargar los gastos del reporte");
+      }
+      setIsReportSnapshotReady(
+        summaryResult.status === "fulfilled" && expensesResult.status === "fulfilled",
+      );
+    };
+
+    void loadReportData();
   }, []);
 
   const [services, setServices] = useState<BikeService[]>([]);
@@ -115,6 +186,61 @@ export function DashboardPage({
       completedDate.getMonth() === thisMonth.getMonth()
     );
   }).length;
+  const totalExpenses = expenses.reduce(
+    (total, expense) => total + (Number(expense.amount) || 0),
+    0,
+  );
+
+  const saveCurrentReport = async () => {
+    if (isSavingReport || !isReportSnapshotReady || servicesLoading) return;
+    const today = toLocalDateKey(new Date());
+    const monthName = new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric" }).format(
+      new Date(),
+    );
+    const title = prompt("Nombre del reporte:", `Cierre de mes - ${monthName}`)?.trim();
+    if (!title) return;
+
+    setIsSavingReport(true);
+    setReportMessage("");
+    setReportError("");
+    try {
+      const reportDates = [
+        ...services.map((service) => service.createdAt.slice(0, 10)),
+        ...expenses.map((expense) => String(expense.date ?? expense.createdAt ?? "").slice(0, 10)),
+      ].filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date));
+      const periodStart = reportDates.sort()[0] ?? today;
+      const byStatus: Record<string, number> = {};
+      const byType: Record<string, number> = {};
+      for (const service of services) {
+        byStatus[service.status] = (byStatus[service.status] ?? 0) + 1;
+        byType[service.serviceType] = (byType[service.serviceType] ?? 0) + 1;
+      }
+      const totalRevenue = Number(reportsSummary?.totalRevenue) || 0;
+
+      await api.saveReport({
+        title,
+        periodStart,
+        periodEnd: today,
+        totalRevenue,
+        totalExpenses,
+        netBalance: totalRevenue - totalExpenses,
+        totalServicesCount: services.length,
+        breakdown: { byStatus, byType },
+      });
+      setReportMessage("Reporte archivado correctamente");
+      try {
+        setSavedReports(await api.getSavedReports());
+      } catch {
+        setReportError("Reporte archivado, pero no se pudo actualizar el historial");
+      }
+    } catch (saveError) {
+      setReportError(
+        saveError instanceof Error ? saveError.message : "No se pudo guardar el reporte",
+      );
+    } finally {
+      setIsSavingReport(false);
+    }
+  };
 
   const createService = async (data: NewBikeServiceData) => {
     const created = await api.createService({
@@ -289,30 +415,27 @@ export function DashboardPage({
         </div>
         <button
           className="button-secondary"
-          onClick={() => window.open(api.getReportsExportUrl(), "_blank")}
+          type="button"
+          onClick={() => exportServicesToCSV(services)}
         >
           Exportar a CSV
         </button>
         <button
           className="button-primary"
           style={{ marginLeft: "1rem" }}
-          onClick={async () => {
-            const title = prompt(
-              "Nombre del reporte:",
-              `Reporte ${new Date().toLocaleDateString()}`,
-            );
-            if (title && reportsSummary) {
-              await api.saveReport(title, reportsSummary);
-              api
-                .getSavedReports()
-                .then((res) => setSavedReports(res))
-                .catch(() => {});
-            }
-          }}
+          type="button"
+          onClick={() => void saveCurrentReport()}
+          disabled={isSavingReport || !isReportSnapshotReady || servicesLoading}
         >
-          Guardar Reporte
+          {isSavingReport ? "Guardando..." : "Guardar reporte"}
         </button>
       </section>
+      {reportMessage && <p role="status">{reportMessage}</p>}
+      {reportError && (
+        <p className="dashboard-error" role="alert">
+          {reportError}
+        </p>
+      )}
 
       {reportsSummary && (
         <section className="kpi-strip">
@@ -324,14 +447,22 @@ export function DashboardPage({
           </article>
           <article className="kpi-item">
             <div>
-              <p>Servicios Concluidos</p>
-              <strong>{reportsSummary.totalServices.delivered}</strong>
+              <p>Gastos Totales</p>
+              <strong style={{ color: "#DC2626" }}>${totalExpenses}</strong>
             </div>
           </article>
           <article className="kpi-item">
             <div>
-              <p>Distribución</p>
-              <strong>{Object.keys(reportsSummary.topServices).length} tipos</strong>
+              <p>Balance Neto</p>
+              <strong style={{ color: "#16A34A" }}>
+                ${reportsSummary.totalRevenue - totalExpenses}
+              </strong>
+            </div>
+          </article>
+          <article className="kpi-item">
+            <div>
+              <p>Servicios Concluidos</p>
+              <strong>{reportsSummary.totalServices.delivered}</strong>
             </div>
           </article>
         </section>
@@ -360,9 +491,13 @@ export function DashboardPage({
                     <td style={{ padding: "0.5rem" }}>
                       {new Date(report.createdAt).toLocaleDateString()}
                     </td>
-                    <td style={{ padding: "0.5rem" }}>${report.data?.totalRevenue || 0}</td>
                     <td style={{ padding: "0.5rem" }}>
-                      {report.data?.totalServices?.delivered || 0}
+                      ${report.totalRevenue ?? report.data?.totalRevenue ?? 0}
+                    </td>
+                    <td style={{ padding: "0.5rem" }}>
+                      {report.breakdown?.byStatus?.COMPLETED ??
+                        report.data?.totalServices?.delivered ??
+                        0}
                     </td>
                   </tr>
                 ))}

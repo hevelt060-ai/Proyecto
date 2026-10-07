@@ -25,6 +25,8 @@ const createServiceSchema = z.object({
   serviceType: z.string().min(1),
   notes: z.string().optional().default(""),
   deliveryDate: z.string().min(1),
+  cost: z.number().optional().default(0.0),
+  paymentStatus: z.enum(["pagado", "anticipo", "pendiente"]).optional().default("pendiente"),
 });
 
 const updateServiceStatusSchema = z.object({
@@ -39,6 +41,8 @@ const updateServiceSchema = z.object({
   notes: z.string().optional(),
   deliveryDate: z.string().optional(),
   status: z.string().optional(),
+  cost: z.number().optional(),
+  paymentStatus: z.enum(["pagado", "anticipo", "pendiente"]).optional(),
   laborCost: z.number().optional(),
   parts: z
     .array(

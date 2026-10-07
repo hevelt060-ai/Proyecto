@@ -28,6 +28,7 @@ import { InMemoryOrganizationStore, OrganizationService } from "@erp/organizatio
 import { sseEmitter } from "./sse.js";
 import { createServicesRouter } from "./modules/services/services.routes.js";
 import { createReportsRouter } from "./modules/reports/reports.routes.js";
+import { createExpensesRouter } from "./modules/expenses/expenses.routes.js";
 
 dns.setDefaultResultOrder("ipv4first");
 
@@ -891,9 +892,10 @@ export const createApp = (dependencies: ApiDependencies = {}) => {
     },
   );
 
-  // Mount services and reports endpoints
+  // Mount services, reports and expenses endpoints
   app.use(`${config.apiPrefix}/services`, createServicesRouter(authenticated));
   app.use(`${config.apiPrefix}/reports`, createReportsRouter(authenticated));
+  app.use(`${config.apiPrefix}/expenses`, createExpensesRouter(authenticated));
 
   // SSE Sync Endpoint
   app.get(`${config.apiPrefix}/sync`, authenticated, (request, response) => {

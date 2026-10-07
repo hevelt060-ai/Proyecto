@@ -23,6 +23,7 @@ export interface BikeService {
   completedAt?: string | undefined;
   laborCost?: number;
   totalCost?: number;
+  paymentStatus?: string;
 }
 
 export interface NewBikeServiceData {
